@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Thilko",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Highlight, comment, and chat with AI on any article — backed by your private Supermemory.",
   "minimum_chrome_version": "120",
   "icons": {
@@ -50,6 +50,18 @@
         "*://*.santander.com/*"
       ],
       "js": ["src/content/index.ts"],
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://claude.ai/*",
+        "*://*.claude.ai/*",
+        "*://chatgpt.com/*",
+        "*://*.chatgpt.com/*",
+        "*://chat.openai.com/*"
+      ],
+      "js": ["src/content/chat-import/index.ts"],
       "run_at": "document_idle",
       "all_frames": false
     }

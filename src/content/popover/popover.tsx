@@ -20,8 +20,8 @@ import { PopoverHeader } from "./header.js";
 import { Transcript } from "./transcript.js";
 import { useDrag } from "./drag.js";
 import { type ArticleContext } from "./context-budget.js";
-import { buildMemorySummary, type SummaryHighlightItem } from "../../shared/memory-summary.js";
-import { openWithClaude } from "../../shared/claude-handoff.js";
+import { buildContinuationPrompt, type SummaryHighlightItem } from "../../shared/memory-summary.js";
+import { openContinuation, type ChatTarget } from "../../shared/claude-handoff.js";
 
 export interface PopoverProps {
   highlight: Highlight;
@@ -201,7 +201,7 @@ export function Popover(props: PopoverProps) {
   // ─ Overflow-menu handlers ───────────────────────────────────────────────
   // Pulled out of the (removed) popover-footer so the ⋯ menu can fire them.
 
-  const handleOpenWithClaude = useCallback(async () => {
+  const handleOpenInChat = useCallback(async (target: ChatTarget) => {
     const item: SummaryHighlightItem = {
       quote: highlight.anchor.quote.exact,
       createdAt: highlight.createdAt,
@@ -212,17 +212,20 @@ export function Popover(props: PopoverProps) {
         messages: t.messages.map((m) => ({ role: m.role, content: m.content })),
       })),
     };
-    const summary = buildMemorySummary({
+    const prompt = buildContinuationPrompt({
       kind: "highlight",
       article: { title: articleTitle, canonicalUrl: articleCanonicalUrl },
       highlight: item,
     });
-    const { clipboardOk, tabOk } = await openWithClaude(summary);
-    if (clipboardOk && tabOk) setToast({ kind: "ok", text: "Memory summary copied — paste it into Claude." });
-    else if (!clipboardOk && tabOk) setToast({ kind: "error", text: "Clipboard blocked — paste from your selection or try again." });
-    else if (clipboardOk && !tabOk) setToast({ kind: "error", text: "Copied. Couldn't open Claude tab automatically." });
-    else setToast({ kind: "error", text: "Couldn't copy or open Claude. Try again." });
+    const { clipboardOk, tabOk } = await openContinuation(target, prompt);
+    const targetLabel = target === "chatgpt" ? "ChatGPT" : "Claude";
+    if (tabOk) setToast({ kind: "ok", text: `Opening ${targetLabel} — your conversation will load there.` });
+    else if (clipboardOk) setToast({ kind: "error", text: `Couldn't open ${targetLabel} tab. Conversation copied — paste it manually.` });
+    else setToast({ kind: "error", text: `Couldn't hand off to ${targetLabel}. Try again.` });
   }, [highlight.anchor.quote.exact, highlight.createdAt, highlight.orphaned, comments, threads, articleTitle, articleCanonicalUrl]);
+
+  const handleOpenWithClaude = useCallback(() => handleOpenInChat("claude"), [handleOpenInChat]);
+  const handleOpenWithChatgpt = useCallback(() => handleOpenInChat("chatgpt"), [handleOpenInChat]);
 
   const handleCopyQuote = useCallback(async () => {
     try {
@@ -261,6 +264,7 @@ export function Popover(props: PopoverProps) {
         minimized={minimized}
         onDeleteHighlight={handleDeleteHighlight}
         onOpenWithClaude={handleOpenWithClaude}
+        onOpenWithChatgpt={handleOpenWithChatgpt}
         onCopyQuote={handleCopyQuote}
       />
       {minimized ? null : (

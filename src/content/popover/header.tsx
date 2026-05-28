@@ -37,11 +37,12 @@ export interface PopoverHeaderProps {
   /** Overflow menu callbacks. */
   onDeleteHighlight: () => void;
   onOpenWithClaude: () => void;
+  onOpenWithChatgpt: () => void;
   onCopyQuote: () => void;
 }
 
 export function PopoverHeader(props: PopoverHeaderProps) {
-  const { quote, handleRef, onCollapse, onClose, onToggleMinimized, minimized, onDeleteHighlight, onOpenWithClaude, onCopyQuote } = props;
+  const { quote, handleRef, onCollapse, onClose, onToggleMinimized, minimized, onDeleteHighlight, onOpenWithClaude, onOpenWithChatgpt, onCopyQuote } = props;
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -114,6 +115,9 @@ export function PopoverHeader(props: PopoverHeaderProps) {
               </button>
               <button type="button" role="menuitem" onClick={fire(onOpenWithClaude)}>
                 Open with Claude
+              </button>
+              <button type="button" role="menuitem" onClick={fire(onOpenWithChatgpt)}>
+                Open with ChatGPT
               </button>
               <button type="button" role="menuitem" onClick={fire(onCollapse)}>
                 Collapse to chip

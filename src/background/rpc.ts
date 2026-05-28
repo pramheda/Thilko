@@ -44,6 +44,10 @@ import {
   type ProxyCreds,
 } from "../shared/proxy-api.js";
 import { type RpcRequest, type RpcResponse } from "../shared/messages.js";
+import { CLAUDE_CHAT_URL, CHATGPT_URL } from "../shared/claude-handoff.js";
+
+/** Shared key for the one-shot chat-import stash read by chat-import content script. */
+const CHAT_IMPORT_STASH_KEY = "thilko_pendingChatImport";
 import { getConnectionStatus, runHealthCheck } from "./health-check.js";
 import { appendOpLog, clearOpLog, readOpLog } from "./op-log.js";
 
@@ -58,10 +62,29 @@ async function dispatch(req: RpcRequest): Promise<unknown> {
   if (req.kind === "recheckConnection") {
     return runHealthCheck();
   }
-  if (req.kind === "openClaudeImport") {
+  if (req.kind === "openClaude") {
     // Pure tab open — no proxy creds needed. Lives in background because
-    // content scripts can't call chrome.tabs.create directly.
-    await chrome.tabs.create({ url: "https://claude.com/import-memory" });
+    // content scripts can't call chrome.tabs.create directly. Target is a
+    // fresh Claude.ai chat; the caller has already copied the summary to
+    // the clipboard so the user can paste as their first message.
+    await chrome.tabs.create({ url: CLAUDE_CHAT_URL });
+    return { ok: true };
+  }
+  if (req.kind === "openInChat") {
+    // Continuation flow: stash the text for the chat-import content script
+    // to pick up + auto-paste + auto-send on the target site. We use
+    // chrome.storage.session so the stash dies when the browser closes
+    // (one-shot, not persistent), and the content script also clears it
+    // after use to prevent re-fire on refresh.
+    const url = req.target === "chatgpt" ? CHATGPT_URL : CLAUDE_CHAT_URL;
+    await chrome.storage.session.set({
+      [CHAT_IMPORT_STASH_KEY]: {
+        target: req.target,
+        text: req.text,
+        ts: Date.now(),
+      },
+    });
+    await chrome.tabs.create({ url });
     return { ok: true };
   }
   if (req.kind === "readOpLog") {

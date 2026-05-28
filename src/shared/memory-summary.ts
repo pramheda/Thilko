@@ -4,7 +4,7 @@
  * The user clicks "Open with Claude" on a popover, sidebar, or library
  * surface; the calling surface assembles a scope object containing only the
  * data this builder needs, and we produce a markdown string that gets
- * copied to the clipboard for paste into claude.com/import-memory.
+ * copied to the clipboard for paste into a fresh claude.ai chat.
  *
  * Three scopes:
  *   1. highlight — one passage with its comments and AI threads.
@@ -281,4 +281,85 @@ function oneLine(s: string): string {
 function renderTruncationNote(kind: SummaryScope["kind"], dropped: number, total: number): string {
   const unit = kind === "topic" ? "article" : "highlight";
   return `\n_Summary truncated — ${dropped} more ${unit}${dropped === 1 ? "" : "s"} of ${total} not shown (50,000-character cap)._\n`;
+}
+
+// ── Continuation prompt ────────────────────────────────────────────────────
+//
+// Different shape from the summary above: this is the message body we drop
+// into a fresh claude.ai / chatgpt.com chat as the user's FIRST message so
+// they can continue the Dabbis thread in another LLM. Differences vs
+// buildMemorySummary:
+//
+//   - Per-turn content is preserved verbatim (no oneLine() flattening) so
+//     multi-paragraph replies, lists, and code blocks survive.
+//   - A short framing intro tells the target model how to respond ("read,
+//     acknowledge, wait for next question") so by the time the user looks
+//     at the chat surface, the model has already responded with a brief
+//     "OK, ready" — no wall-of-text review required.
+//   - Role labels use "Me" / "Assistant" for portability across targets.
+//   - Bounded by `MEMORY_SUMMARY_MAX_CHARS` like the summary.
+
+/** Build the first-message prompt for the Open-with-Claude / ChatGPT flow. */
+export function buildContinuationPrompt(scope: SummaryHighlightScope, maxChars: number = MEMORY_SUMMARY_MAX_CHARS): string {
+  const { article, highlight } = scope;
+
+  const intro = [
+    "Below is the transcript of a conversation I was just having with a reading assistant about an article. Please read it, understand the context, and just reply with \"OK, ready to continue\" — I'll ask my next question after that.",
+    "",
+  ].join("\n");
+
+  const header = [
+    `**Article**: ${article.title || "(untitled)"}${article.canonicalUrl ? ` — ${article.canonicalUrl}` : ""}`,
+    "",
+    "**Highlighted passage**:",
+    blockquote(highlight.quote),
+    "",
+  ].join("\n");
+
+  const transcriptParts: string[] = [];
+  if (highlight.comments.length > 0) {
+    transcriptParts.push("**My notes on this passage:**");
+    const sorted = [...highlight.comments].sort((a, b) => a.createdAt - b.createdAt);
+    for (const c of sorted) transcriptParts.push(`- ${c.text}`);
+    transcriptParts.push("");
+  }
+
+  if (highlight.threads.length > 0) {
+    transcriptParts.push("**Conversation so far:**");
+    transcriptParts.push("");
+    const sortedThreads = [...highlight.threads].sort((a, b) => a.lastMessageAt - b.lastMessageAt);
+    sortedThreads.forEach((t, idx) => {
+      if (sortedThreads.length > 1) {
+        transcriptParts.push(`_Thread ${idx + 1}_`);
+        transcriptParts.push("");
+      }
+      for (const m of t.messages) {
+        const speaker = m.role === "user" ? "Me" : "Assistant";
+        // Preserve full message content verbatim — multi-paragraph, lists,
+        // code blocks all survive. Bold the speaker label, then a blank line,
+        // then the content on its own block.
+        transcriptParts.push(`**${speaker}:**`);
+        transcriptParts.push("");
+        transcriptParts.push(m.content);
+        transcriptParts.push("");
+      }
+    });
+  }
+
+  const transcript = transcriptParts.join("\n");
+  const footer = "\n---\n\n(End of transcript. Please reply \"OK, ready to continue\" and wait for my next question.)\n";
+
+  const full = intro + header + transcript + footer;
+  if (full.length <= maxChars) return full;
+
+  // Soft-truncate the transcript portion from the END (keep the most recent
+  // messages — those are the most relevant for "continue from here"). Hard
+  // ceiling sliced just in case.
+  const budget = maxChars - intro.length - header.length - footer.length - 80;
+  if (budget <= 0) return full.slice(0, maxChars);
+  let truncTranscript = transcript;
+  if (transcript.length > budget) {
+    truncTranscript = "_…earlier messages truncated…_\n\n" + transcript.slice(-budget);
+  }
+  return intro + header + truncTranscript + footer;
 }

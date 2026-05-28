@@ -40,7 +40,8 @@ export type RpcRequest =
   | { kind: "listThreads"; highlightId?: string; articleId?: string }
   | { kind: "search"; q: string; filters?: { kinds?: string[]; articleId?: string; highlightId?: string; topicId?: string } }
   | { kind: "listTopics" }
-  | { kind: "openClaudeImport" }
+  | { kind: "openClaude" }
+  | { kind: "openInChat"; target: "claude" | "chatgpt"; text: string }
   | { kind: "readOpLog" }
   | { kind: "clearOpLog" }
   | { kind: "resetAllData" };
