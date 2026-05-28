@@ -1,0 +1,35 @@
+{
+  "name": "thilko",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Chrome extension: highlight, comment, and chat with AI on any web article or PDF, backed by Supermemory.",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@apache-annotator/dom": "^0.2.0",
+    "@apache-annotator/selector": "^0.2.0",
+    "@types/dompurify": "^3.0.5",
+    "dompurify": "^3.4.5",
+    "marked": "^18.0.4",
+    "pdfjs-dist": "^5.7.284",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.34",
+    "@types/chrome": "^0.0.287",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  }
+}

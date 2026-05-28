@@ -1,0 +1,1186 @@
+/*
+ * Shadow-DOM styles for floating widgets (selection toolbar + popovers).
+ * Injected once per shadow root via shadow-mount.ts. Host page CSS cannot
+ * reach inside; our rules don't need !important.
+ */
+
+:host, .thilko-mount {
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #1f2937;
+  --bg: #ffffff;
+  --bg-soft: #fbfaf7;          /* warm off-white for cards and quote */
+  --panel: #ffffff;
+  --panel-veil: rgba(255, 255, 255, 0.78);  /* used for frosted header */
+  --text: #1f2937;
+  --text-strong: #111827;
+  --muted: #6b7280;
+  --border: #ececef;
+  --border-strong: #d1d5db;
+  --hairline: rgba(15, 23, 42, 0.08);  /* used as inset shadow for borderless cards */
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-soft: rgba(79, 70, 229, 0.08);
+  --accent-tint: rgba(79, 70, 229, 0.04);
+  --ok: #16a34a;
+  --warn: #a16207;
+  --error: #b91c1c;
+  /* Layered shadow stack: contact + mid + ambient. Reads as real depth
+   * rather than a single flat blur halo. */
+  --shadow-popover:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 4px 12px rgba(15, 23, 42, 0.06),
+    0 24px 56px rgba(15, 23, 42, 0.12);
+  --shadow-md:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --radius-lg: 16px;
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+
+/* Light-only palette: dark-mode override removed so the toolbar / popover /
+ * sidebar match the mascot's warm illustration regardless of the host page
+ * or OS-level dark mode. */
+
+* {
+  box-sizing: border-box;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  cursor: pointer;
+  pointer-events: auto;
+  font-weight: 500;
+  transition: background 140ms cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 80ms,
+              box-shadow 140ms;
+}
+
+button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: var(--accent-tint);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Primary action: near-black surface, not brand purple. Restraint reads
+ * as taste. Purple is reserved for the mascot, count pills, and the user-
+ * turn accent stripe — pixels with semantic weight, not button chrome. */
+button.primary {
+  background: #1c1d22;
+  color: #f5f4f1;
+  border-color: #1c1d22;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+button.primary:hover:not(:disabled) {
+  background: #2a2c33;
+  border-color: #2a2c33;
+}
+
+button.primary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+
+button.ghost:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: transparent;
+}
+
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  width: 100%;
+  resize: vertical;
+  min-height: 64px;
+  pointer-events: auto;
+}
+
+textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+/* ── Selection toolbar ── */
+
+.toolbar {
+  position: relative;
+  display: inline-flex;
+  gap: 4px;
+  align-items: stretch;
+  /* Same gradient panel + layered shadow language as the popover, scaled
+   * down for a smaller surface. */
+  background: linear-gradient(180deg, #ffffff 0%, #fcfbf9 100%);
+  border: none;
+  border-radius: 999px;
+  padding: 4px;
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    var(--shadow-md);
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  animation: thilko-toolbar-enter 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes thilko-toolbar-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.toolbar button {
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar button:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Flat-SVG Dabbis glyphs (inline) — speech bubble for Comment, sparkle
+ * for Ask AI. The SVG bodies use currentColor so we paint them lavender
+ * via a local `color` rule; the fixed-gold halo dot stays gold across
+ * states for a stable brand mark. */
+.toolbar-glyph {
+  display: block;
+  margin-left: -2px;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.toolbar-divider {
+  width: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+  align-self: stretch;
+}
+
+/* ── Mascot ──
+ * The character peeks above the toolbar (P3 sidekick layout) and the
+ * popover header. Decorative — clicks pass through to underlying content,
+ * the mascot itself has no semantic value beyond brand presence.
+ */
+.thilko-mascot {
+  display: block;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
+.toolbar-with-mascot {
+  /* Establishes a positioning context for the absolutely-placed sidekick. */
+  position: relative;
+}
+
+.toolbar-mascot {
+  position: absolute;
+  left: -10px;
+  top: -38px;
+  transform: rotate(-6deg);
+  pointer-events: none;
+  /* Slight drop shadow under the mascot so it lifts off the page content
+   * behind the toolbar. */
+  filter: drop-shadow(0 4px 8px rgba(15, 23, 42, 0.15));
+}
+
+.popover-header-mascot {
+  display: flex;
+  align-items: center;
+  margin-right: 8px;
+  flex: 0 0 auto;
+}
+
+/* ── Popover ── */
+
+.popover {
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  max-height: min(640px, calc(100vh - 48px));
+  /* Subtle vertical gradient so the panel reads as a surface rather than a
+   * flat sheet. Pure-white at top, ~1% warm shift at the bottom. */
+  background: linear-gradient(180deg, #ffffff 0%, #fcfbf9 100%);
+  border: none;
+  border-radius: var(--radius-lg);
+  /* Hairline border via inset shadow, then the layered drop shadow on top.
+   * Borderless geometry feels lighter; the inset shadow gives it definition
+   * against light page backgrounds without competing with the drop shadow. */
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    var(--shadow-popover);
+  overflow: hidden;
+  pointer-events: auto;
+  animation: thilko-popover-enter 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
+}
+
+@keyframes thilko-popover-enter {
+  from {
+    opacity: 0;
+    transform: translateX(12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.popover-collapsed {
+  width: auto;
+  padding: 6px 10px;
+}
+
+.popover-collapsed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.popover-collapsed-chip .badge {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.popover-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  /* Frosted glass: semi-translucent white over the gradient panel below, plus
+   * a backdrop-blur on browsers that support it. Falls back to opaque on
+   * older browsers. */
+  background: var(--panel-veil);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  /* Faint shadow under the header instead of a hard 1px border — softer
+   * separation against the panel below. */
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.popover-header:active {
+  cursor: grabbing;
+}
+
+/* The header IS the quote now — one-line truncated. Restraint reads as
+ * taste; a 28px serif open-quote glyph reads as effort. */
+.popover-header-quote {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popover-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.popover-header-menu-wrap {
+  position: relative;
+}
+
+.popover-header-menu-btn,
+.popover-header-minimize,
+.popover-header-close {
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  line-height: 1;
+  transition: background 120ms, color 120ms, transform 80ms;
+  cursor: pointer;
+}
+
+.popover-header-menu-btn:hover,
+.popover-header-minimize:hover,
+.popover-header-close:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.popover-header-menu-btn:active,
+.popover-header-minimize:active,
+.popover-header-close:active {
+  transform: scale(0.94);
+}
+
+/* Minimized = header only, no body, no composer.
+ * The shadow-host's `height: auto` shrinks to the header's height
+ * automatically; we just need to make the header itself a clean affordance
+ * for "click to restore" and remove the click-distinguishing hover from
+ * the header body (only the minimize button should hover that way). */
+.popover-minimized {
+  cursor: pointer;
+  /* Slim shadow so the minimized strip doesn't look like the open panel. */
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    var(--shadow-md);
+}
+
+.popover-minimized .popover-header {
+  cursor: pointer;
+}
+
+.popover-minimized:hover .popover-header-quote {
+  color: var(--accent);
+}
+
+.popover-header-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--panel);
+  border-radius: var(--radius);
+  box-shadow:
+    inset 0 0 0 1px var(--hairline),
+    var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+  animation: thilko-menu-enter 120ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
+}
+
+@keyframes thilko-menu-enter {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+.popover-header-menu button {
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 100ms, color 100ms;
+}
+
+.popover-header-menu button:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.popover-header-menu button.danger {
+  color: var(--error);
+}
+
+.popover-header-menu button.danger:hover {
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+  color: var(--error);
+}
+
+.popover-header-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--hairline);
+}
+
+/* PR2 — the popover body is now Transcript + Composer. The old
+ * .popover-body / .section-title / .comment-list / .comments-stub blocks
+ * are retired; their replacements live below in the "Transcript" section.
+ * The CSS for .comment-item* + .comment-add* below this is also retired
+ * (the new CommentStrip lives in its own block). */
+
+/* ── Transcript ──
+ * The unified conversation surface. Grid `24px 1fr` so the mascot has a
+ * reserved column on the first assistant turn; subsequent assistant turns
+ * leave col 1 empty for visual alignment (no jitter). User turns get an
+ * accent left-stripe instead — they don't use the mascot column.
+ */
+.transcript {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px; /* default between-author rhythm */
+  min-height: 120px;
+}
+
+/* Compress same-author runs so the transcript doesn't waste vertical space
+ * on conversational pacing within one speaker's reply. Author changes keep
+ * the default 18px gap; same-author neighbors collapse to ~8px effective.
+ * (.turn-pending and .turn-searching both carry .turn-assistant so they
+ * collapse against neighboring assistant turns too.) */
+.turn-user + .turn-user,
+.turn-assistant + .turn-assistant {
+  margin-top: -10px; /* 18px gap minus 10px = 8px effective */
+}
+
+.turn {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 8px;
+}
+
+/* User turns: right-aligned, soft accent-tinted pill, no border / shadow /
+ * stripe. The asymmetry of treatment plus the right alignment IS the "from
+ * you" tell — no chrome required. Notched bottom-right corner = subtle
+ * directional cue. Max-width 78% keeps it from running across the full
+ * popover width on long messages. */
+.turn-user {
+  grid-template-columns: 1fr;
+  justify-items: end;
+}
+.turn-user .turn-prose {
+  max-width: 78%;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-soft));
+  border-radius: 12px 12px 4px 12px;
+  padding: 7px 11px;
+  min-width: 0;
+}
+
+.turn-assistant .turn-gutter {
+  grid-column: 1;
+}
+.turn-assistant .turn-prose {
+  min-width: 0;
+}
+
+.turn-mascot {
+  margin-top: 2px; /* optical alignment with the first line of prose */
+  display: block;
+}
+
+/* The mascot is breathing — used while we're waiting on the model
+ * (pre-text deltas) or while a web search is in flight. Subtle, slow
+ * ease-in-out. Stops the moment the assistant turn starts streaming text. */
+.turn-mascot-breathing {
+  animation: thilko-mascot-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes thilko-mascot-breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+/* ── Pending: "Dabbis is thinking…" pre-text ──
+ * Shown briefly when the chat stream has been opened but no deltas (and no
+ * search activity) have arrived. Replaced the moment the first delta or
+ * search event lands. */
+.turn-pending-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* ── Searching: web_search call(s) in flight ──
+ * Inline indicator that replaces the would-be assistant turn while Codex's
+ * web_search runs. Multiple sequential searches stack. */
+.turn-searching .turn-searching-label {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.turn-searching-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+.turn-searching-row.done {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.turn-searching-row.active {
+  color: var(--text);
+  font-style: italic;
+}
+
+.turn-searching-glyph {
+  flex: 0 0 auto;
+  width: 14px;
+  font-size: 11px;
+  font-style: normal;
+  color: inherit;
+  text-align: center;
+}
+
+.turn-searching-row.done .turn-searching-glyph {
+  color: var(--accent);
+}
+
+.turn-searching-query {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.turn-searching-overflow {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+/* ── CommentStrip ──
+ * Quiet rows above the chat turns. No section title, no bordered cards —
+ * comments are a side channel, not a peer surface.
+ */
+.comment-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.comment-row {
+  display: grid;
+  grid-template-columns: 18px 1fr 24px;
+  align-items: start;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  transition: background 120ms, color 120ms;
+}
+
+.comment-row:hover {
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.comment-row.busy {
+  opacity: 0.55;
+}
+
+.comment-row-glyph {
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  user-select: none;
+}
+
+.comment-row-text {
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.comment-row-delete {
+  opacity: 0;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 0 4px;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 120ms, background 120ms, color 120ms;
+}
+
+.comment-row:hover .comment-row-delete,
+.comment-row-delete:focus-visible {
+  opacity: 1;
+}
+
+.comment-row-delete:hover {
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+  color: var(--error);
+}
+
+.transcript-error {
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--error) 18%, transparent);
+}
+
+/* ── Composer ──
+ * The single input surface at the bottom of the popover. Paperclip toggle
+ * on the left, textarea fills the middle, primary submit on the right.
+ * Frosted strip mirrors the header so the popover frames the conversation.
+ */
+.composer {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: end;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--panel-veil);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 -1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.composer-mode-toggle {
+  background: transparent;
+  border: none;
+  padding: 6px 8px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 120ms, color 120ms, transform 80ms;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The glyph IS the toggle's affordance — no surrounding text, so we just
+ * size it to match the old emoji's optical weight (~20px). Inline SVG
+ * uses currentColor; we set it to muted at rest, accent on hover. */
+.composer-mode-glyph {
+  display: block;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+.composer-mode-toggle:hover:not(:disabled) .composer-mode-glyph,
+.composer-mode-toggle.active .composer-mode-glyph {
+  color: var(--accent);
+}
+
+.composer-mode-toggle:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.composer-mode-toggle:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.composer-textarea {
+  min-height: 36px;
+  max-height: 200px;
+  resize: none;
+  border: none;
+  background: transparent;
+  padding: 8px 4px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.composer-textarea:focus {
+  outline: none;
+}
+
+.composer-submit {
+  font-size: 12px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+}
+
+/* .popover-footer + .popover-footer button — removed in PR1 design pass.
+ * The "Open with Claude" action now lives in the popover-header ⋯ menu. */
+
+.toast {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--error);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 12px;
+  box-shadow: var(--shadow-sm);
+  max-width: 280px;
+  z-index: 10;
+}
+
+.toast.ok {
+  border-left-color: var(--ok);
+}
+
+/* PR2 retired:
+ *   - .threads-section .stub  (no section labels)
+ *   - .thread-list / .thread-row / .thread-row-* / .thread-actions
+ *     (legacy collapsible-threads UI; consolidated to one chronological
+ *      transcript in <Transcript>)
+ *   - .thread-error             (replaced by .transcript-error)
+ *   - .thread-view              (legacy single-thread chat view)
+ *   - .thread-transcript / .thread-empty
+ *   - The previous PR1 .turn / .turn-user / .turn-assistant rules
+ *     (re-declared above in the Transcript grid section)
+ * Their replacements live in the Transcript / CommentStrip blocks above. */
+
+.markdown {
+  word-break: break-word;
+}
+
+.markdown p {
+  margin: 0 0 6px;
+}
+
+.markdown p:last-child {
+  margin: 0;
+}
+
+.markdown pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  overflow-x: auto;
+  font-size: 12px;
+  margin: 6px 0;
+}
+
+.markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.markdown ul, .markdown ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.markdown a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.markdown-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 2px;
+  background: var(--accent);
+  vertical-align: -2px;
+  animation: thilko-blink 900ms steps(2, end) infinite;
+}
+
+@keyframes thilko-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* .thread-composer / .thread-composer textarea / .thread-composer-actions —
+ * retired in PR2. The unified Composer (paperclip toggle + textarea + send)
+ * is styled in the Composer block above. */
+
+/* ── Sidebar — toggle button ── */
+
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  pointer-events: auto;
+  transition: background-color 80ms;
+}
+
+.sidebar-toggle:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.sidebar-toggle.open {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.sidebar-toggle-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.sidebar-toggle-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sidebar-toggle.open .sidebar-toggle-badge {
+  background: white;
+  color: var(--accent);
+}
+
+/* ── Sidebar — panel ── */
+
+.sidebar {
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  height: 100vh;
+  background: var(--panel);
+  color: var(--text);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(15, 23, 42, 0.15);
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+}
+
+.sidebar-header {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.sidebar-header-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.sidebar-header-title {
+  flex: 1 1 auto;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sidebar-close {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  font-size: 14px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sidebar-close:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.sidebar-claude {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  font-size: 14px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sidebar-claude:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.sidebar-claude:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.sidebar-claude-toast {
+  margin: 8px 12px 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.sidebar-claude-toast.ok {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.sidebar-claude-toast.error {
+  background: color-mix(in srgb, var(--danger, #b91c1c) 12%, transparent);
+  color: var(--danger, #b91c1c);
+  border: 1px solid color-mix(in srgb, var(--danger, #b91c1c) 30%, transparent);
+}
+
+.sidebar-counts {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.sidebar-orphans-count {
+  color: var(--warn);
+}
+
+.sidebar-filters {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.filter-chip {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.filter-chip-glyph {
+  display: block;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+/* Active chip has white text on purple — flip the SVG body to white too
+ * (currentColor follows `color`). The halo dot is fixed gold and stays
+ * legible against purple, so we don't need to touch it. */
+.filter-chip.active .filter-chip-glyph {
+  color: white;
+}
+
+.filter-chip:hover:not(.active) {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.filter-chip.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.sidebar-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 10px 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sidebar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-empty {
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 24px 8px;
+}
+
+.sidebar-orphans-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warn);
+  margin-bottom: 4px;
+}
+
+.sidebar-orphans-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+/* ── Note row ── */
+
+.note-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.note-row:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.note-row-quote {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.45;
+  font-style: italic;
+  background: rgba(253, 224, 71, 0.10);
+  border-left: 2px solid rgba(202, 138, 4, 0.55);
+  padding: 4px 6px;
+  border-radius: 3px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.note-row-preview {
+  font-size: 12px;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+.note-row-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.note-row-badge {
+  padding: 1px 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.note-row-badge-glyph {
+  display: block;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.note-row-badge.muted {
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.note-row-badge.orphan {
+  background: rgba(239, 68, 68, 0.10);
+  color: var(--warn);
+}
+
+.note-row-time {
+  margin-left: auto;
+}

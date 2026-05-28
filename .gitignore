@@ -1,0 +1,25 @@
+node_modules/
+dist/
+dist-zip/
+*.tsbuildinfo
+.env
+.env.local
+.env.*
+.DS_Store
+.vite/
+*.log
+
+# Scratch files / preview servers / source-material drops
+/tmp
+/index.html
+/preview*.html
+/preview/
+
+# Personal session metadata
+.agents/
+.claude/
+
+# Final release artifacts get attached to GitHub Releases, not committed.
+/release/
+/docs/internal/
+/.backups/

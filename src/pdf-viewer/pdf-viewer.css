@@ -1,0 +1,163 @@
+/*
+ * Styles for the PDF viewer page.
+ *
+ * The viewer is the host document; all of Thilko's overlay UI (selection
+ * toolbar, popovers, sidebar) lives inside shadow-DOM hosts on top, and
+ * inherits its own design tokens from ui/styles.css. This file owns:
+ *   - Body background + top toolbar
+ *   - Page wrappers + text-layer positioning (pdf.js conventions)
+ *   - Error banner for PDFs we can't load
+ */
+
+:root {
+  /* Forced light palette — page backdrop is the same warm off-white as the
+   * library / options surfaces. The white PDF pages stand out via box-shadow
+   * rather than via contrast against a dark backdrop. */
+  color-scheme: light;
+  --bg: #fafaf9;
+  --panel: #ffffff;
+  --text: #111827;
+  --muted: #6b7280;
+  --accent: #4f46e5;
+  --error: #b91c1c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, system-ui, sans-serif;
+  color: var(--text);
+}
+
+.viewer {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.viewer-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid color-mix(in srgb, var(--muted) 30%, transparent);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.viewer-toolbar .viewer-title {
+  flex: 1 1 auto;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer-toolbar .viewer-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.viewer-toolbar a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.viewer-toolbar a:hover {
+  text-decoration: underline;
+}
+
+.viewer-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0 48px;
+}
+
+.viewer-page {
+  position: relative;
+  background: white;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  /* width + height are set inline based on the PDF viewport. */
+}
+
+.viewer-page canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* pdf.js text layer — invisible text overlay aligned with the canvas so the
+ * user can select. The text spans are absolutely positioned by pdf.js. */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  text-align: initial;
+  -webkit-font-smoothing: antialiased;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: var(--accent);
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer ::selection {
+  background: rgba(79, 70, 229, 0.35);
+}
+
+.viewer-loading,
+.viewer-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 16px;
+  color: var(--muted);
+}
+
+.viewer-error {
+  color: var(--error);
+}
+
+.viewer-error .viewer-error-actions {
+  margin-top: 12px;
+}
+
+.viewer-error a {
+  color: var(--accent);
+}
+
+.viewer-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.viewer-banner a {
+  color: var(--accent);
+  font-weight: 500;
+}

@@ -1,0 +1,117 @@
+/*
+ * Scoped styles for the content script's injected DOM (highlights + markers).
+ *
+ * Selectors are scoped by class name (mark.thilko-hl, .thilko-marker). A host
+ * page that uses <mark> for its own purposes without that class is unaffected.
+ * Every property is !important to win against host pages that style <mark> or
+ * generic class selectors with cascading specificity. Tested with apache-
+ * annotator's split-range output (multi-element selections are wrapped into
+ * multiple sibling <mark> nodes, all with the same data-thilko-id attribute).
+ *
+ * Style isolation is NOT shadow-DOM — apache-annotator's highlightText wraps
+ * live text nodes, which is incompatible with placing them inside a shadow root.
+ * The marker uses `all: initial` to reset host-page button styles aggressively.
+ * M4's popover (floating widget, not inline) will use a shadow root.
+ *
+ * For the M3 visual: soft amber background, subtle bottom border so the
+ * highlight reads as a "marker" rather than a heavy block, no padding so
+ * line height stays intact, no display change (keeps inline flow).
+ */
+
+mark.thilko-hl {
+  background-color: rgba(253, 224, 71, 0.55) !important;
+  color: inherit !important;
+  /* Some pages override mark with display:block — force inline behavior. */
+  display: inline !important;
+  padding: 0 !important;
+  border-bottom: 1px solid rgba(202, 138, 4, 0.45) !important;
+  text-decoration: none !important;
+  /* Avoid trapping pointer events on the highlight itself; only the marker is clickable. */
+  cursor: text;
+  /* Smooth visual when re-anchoring on slow pages. */
+  transition: background-color 120ms ease-in-out;
+}
+
+mark.thilko-hl.thilko-hl-active {
+  background-color: rgba(250, 204, 21, 0.85) !important;
+}
+
+/* Brief flash drawn around a highlight when the sidebar scrolls to it. */
+mark.thilko-hl.thilko-hl-flash {
+  background-color: rgba(250, 204, 21, 0.95) !important;
+  box-shadow: 0 0 0 2px rgba(202, 138, 4, 0.7) !important;
+  transition: background-color 220ms ease-out, box-shadow 220ms ease-out !important;
+}
+
+mark.thilko-hl-orphan {
+  /* Orphans aren't rendered on the page (no <mark>), but if a future feature
+     surfaces them inline we'll use this dimmer style. */
+  background-color: rgba(156, 163, 175, 0.30) !important;
+  border-bottom: 1px dashed rgba(75, 85, 99, 0.5) !important;
+}
+
+/* Marker icon — small inline button after each highlight. */
+.thilko-marker {
+  /* Reset host-page button styles aggressively. */
+  all: initial !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  vertical-align: middle !important;
+  /* Sits flush with the highlighted run. */
+  margin: 0 0 0 2px !important;
+  padding: 1px 5px !important;
+  font-size: 11px !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+  background: white !important;
+  color: #4f46e5 !important;
+  border: 1px solid rgba(79, 70, 229, 0.45) !important;
+  border-radius: 8px !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  white-space: nowrap !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08) !important;
+  transition: background-color 80ms, box-shadow 80ms !important;
+}
+
+.thilko-marker:hover {
+  background: rgba(79, 70, 229, 0.08) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14) !important;
+}
+
+.thilko-marker:focus {
+  outline: 2px solid rgba(79, 70, 229, 0.6) !important;
+  outline-offset: 1px !important;
+}
+
+.thilko-marker-icon {
+  display: inline-block !important;
+  width: 14px !important;
+  height: 14px !important;
+  vertical-align: -2px !important;
+  /* Host pages may have global img rules — pin behavior we need. */
+  max-width: 14px !important;
+  max-height: 14px !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  pointer-events: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  /* Smooth downscale from 64×64 source. */
+  image-rendering: auto !important;
+}
+
+.thilko-marker-count {
+  display: inline-block !important;
+  margin-left: 3px !important;
+  font-size: 10px !important;
+  font-weight: 500 !important;
+  color: #4338ca !important;
+}
+
+/* Light-only palette: dark-mode override removed in favor of a consistent
+ * warm light look across all Thilko surfaces. */

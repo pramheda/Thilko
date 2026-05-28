@@ -1,0 +1,69 @@
+{
+  "manifest_version": 3,
+  "name": "Thilko",
+  "version": "0.1.0",
+  "description": "Highlight, comment, and chat with AI on any article — backed by your private Supermemory.",
+  "minimum_chrome_version": "120",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "background": {
+    "service_worker": "src/background/index.ts",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Thilko — open library",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "options_ui": {
+    "page": "src/options/options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "exclude_matches": [
+        "*://claude.ai/*",
+        "*://*.claude.ai/*",
+        "*://claude.com/*",
+        "*://*.claude.com/*",
+        "*://chatgpt.com/*",
+        "*://*.chatgpt.com/*",
+        "*://chat.openai.com/*",
+        "*://mail.google.com/*",
+        "*://accounts.google.com/*",
+        "*://accounts.youtube.com/*",
+        "*://*.bankofamerica.com/*",
+        "*://*.chase.com/*",
+        "*://*.wellsfargo.com/*",
+        "*://*.citibank.com/*",
+        "*://*.hsbc.com/*",
+        "*://*.barclays.com/*",
+        "*://*.santander.com/*"
+      ],
+      "js": ["src/content/index.ts"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "permissions": ["storage", "alarms", "tabs", "declarativeNetRequest"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/pdf-viewer/viewer.html", "src/pdf-viewer/*"],
+      "matches": ["<all_urls>"]
+    },
+    {
+      "resources": ["mascot/*", "mascot/glyphs/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
