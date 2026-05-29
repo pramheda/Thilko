@@ -51,6 +51,45 @@ async function rpc<T = unknown>(req: RpcRequest): Promise<T> {
   return r.data as T;
 }
 
+/**
+ * Parse one of: a full magic-link URL, a `?claim=…` query string, a `#claim=…`
+ * hash fragment, or a bare `t_…` token. Returns the origin (proxy URL) and
+ * the token, or null if nothing usable was found. The origin defaults to
+ * `https://thilko.yesh.is` when the user pastes just a bare token.
+ */
+function parseClaimInput(input: string): { origin: string; token: string; raw: string } | null {
+  const raw = input.trim();
+  if (raw.length === 0) return null;
+
+  // Bare token, no URL
+  if (/^t_[A-Za-z0-9_-]{22}$/.test(raw)) {
+    return { origin: "https://thilko.yesh.is", token: raw, raw };
+  }
+
+  // Full URL form: https://thilko.yesh.is/?claim=t_…  (or with hash form)
+  try {
+    if (raw.startsWith("http://") || raw.startsWith("https://")) {
+      const u = new URL(raw);
+      const t = u.searchParams.get("claim") ?? new URLSearchParams(u.hash.replace(/^#/, "")).get("claim");
+      if (t && /^t_[A-Za-z0-9_-]{22}$/.test(t)) {
+        return { origin: u.origin, token: t, raw };
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+
+  // Loose: `?claim=…` or `#claim=…` from a paste
+  const stripped = raw.replace(/^[#?]+/, "");
+  const pairs = new URLSearchParams(stripped);
+  const t = pairs.get("claim");
+  if (t && /^t_[A-Za-z0-9_-]{22}$/.test(t)) {
+    return { origin: "https://thilko.yesh.is", token: t, raw };
+  }
+
+  return null;
+}
+
 function validateForm(form: FormState): FormErrors {
   const errors: FormErrors = {};
   const parsed = SettingsSchema.pick({
@@ -160,6 +199,93 @@ function App() {
     return () => clearTimeout(id);
   }, [toast]);
 
+  // Magic-link auto-claim: if the options page was opened with
+  // `?claim=<token>` or `#claim=<token>` in its URL, run the claim flow
+  // automatically once on mount. Friends who get a magic-link DM from the
+  // admin can land here pre-configured without ever pasting a secret.
+  const [claimInput, setClaimInput] = useState("");
+  const [claiming, setClaiming] = useState(false);
+  const [claimMsg, setClaimMsg] = useState<{ kind: "ok" | "err" | "info"; text: string } | null>(null);
+
+  const runClaim = useCallback(async (rawInput: string): Promise<boolean> => {
+    setClaiming(true);
+    setClaimMsg(null);
+    try {
+      const parsed = parseClaimInput(rawInput);
+      if (!parsed) {
+        setClaimMsg({ kind: "err", text: "Couldn't read that — paste the full magic-link URL or just the t_… token." });
+        return false;
+      }
+      const res = await fetch(`${parsed.origin}/onboard/claim`, {
+        method: "POST",
+        mode: "cors",
+        credentials: "omit",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: parsed.token }),
+      });
+      const data = await res.json().catch(() => ({})) as { ok?: boolean; proxyUrl?: string; secret?: string; slot?: string; error?: { code: string; message: string } };
+      if (!res.ok || !data.ok || !data.proxyUrl || !data.secret || !data.slot) {
+        setClaimMsg({ kind: "err", text: data.error?.message ?? `Claim failed (${res.status}).` });
+        return false;
+      }
+      // Build a clean settings object and persist via the existing saver so the
+      // SW picks it up + the form reflects the new values.
+      const next = SettingsSchema.parse({
+        proxyUrl: data.proxyUrl,
+        proxySecret: data.secret,
+        slot: data.slot,
+        devMode: form.devMode,
+        exclusionDomains: form.exclusionDomains,
+        localhostEnabled: form.localhostEnabled,
+        autoPersistHighlights: form.autoPersistHighlights,
+      });
+      await saveSettings(next);
+      setForm({
+        proxyUrl: next.proxyUrl,
+        proxySecret: next.proxySecret,
+        slot: next.slot,
+        devMode: next.devMode,
+        exclusionDomains: next.exclusionDomains,
+        localhostEnabled: next.localhostEnabled,
+        autoPersistHighlights: next.autoPersistHighlights,
+      });
+      setOriginalLoaded(next);
+      setClaimMsg({ kind: "ok", text: `Connected to slot "${data.slot}". Testing connection…` });
+      // Verify connection so the friend gets a green dot immediately.
+      try {
+        const status = await rpc<ConnectionStatus>({ kind: "recheckConnection" });
+        setStatus(status);
+      } catch {
+        // non-fatal — the SW poll will catch up
+      }
+      return true;
+    } catch (e) {
+      setClaimMsg({ kind: "err", text: e instanceof Error ? e.message : "Claim failed." });
+      return false;
+    } finally {
+      setClaiming(false);
+    }
+  }, [form.devMode, form.exclusionDomains, form.localhostEnabled, form.autoPersistHighlights]);
+
+  // Auto-claim if the page was opened with a claim token in the URL.
+  useEffect(() => {
+    const fromHash = parseClaimInput(window.location.hash);
+    const fromSearch = parseClaimInput(window.location.search);
+    const parsed = fromHash ?? fromSearch;
+    if (!parsed) return;
+    // Strip the claim from the URL so a refresh doesn't re-fire.
+    try {
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState({}, "", cleanUrl);
+    } catch {
+      /* ignore */
+    }
+    void runClaim(parsed.raw);
+    // intentionally run-once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const errors = useMemo(() => validateForm(form), [form]);
   const formValid = Object.values(errors).every((e) => !e);
   const isDirty = useMemo(() => {
@@ -252,6 +378,44 @@ function App() {
       <div className="panel" aria-label="Connection status">
         <p className="section-title">Status</p>
         <StatusLine status={status} />
+      </div>
+
+      <div className="panel" aria-label="Magic link">
+        <p className="section-title">Got a magic link?</p>
+        <div className="helper-block">
+          Paste the link your friend DM'd you (or just the <code>t_…</code> token).
+          Skips the proxy URL / secret / slot dance below.
+        </div>
+        <div className="row" style={{ alignItems: "stretch" }}>
+          <input
+            type="text"
+            value={claimInput}
+            onChange={(e) => setClaimInput(e.target.value)}
+            placeholder="https://thilko.yesh.is/?claim=t_… (or just t_…)"
+            autoComplete="off"
+            spellCheck={false}
+            disabled={claiming}
+            style={{ flex: 1 }}
+          />
+          <button
+            type="button"
+            onClick={() => void runClaim(claimInput)}
+            disabled={claiming || claimInput.trim().length === 0}
+          >
+            {claiming ? "Connecting…" : "Connect"}
+          </button>
+        </div>
+        {claimMsg ? (
+          <p
+            className="field-hint"
+            style={{
+              marginTop: 8,
+              color: claimMsg.kind === "err" ? "var(--warn)" : claimMsg.kind === "ok" ? "var(--accent)" : undefined,
+            }}
+          >
+            {claimMsg.text}
+          </p>
+        ) : null}
       </div>
 
       <div className="panel">
