@@ -85,22 +85,35 @@ const ADAPTERS: Record<Target, Adapter> = {
 void run();
 
 async function run(): Promise<void> {
+  console.info("[thilko] chat-import script loaded on", location.hostname);
   let item: StashItem | undefined;
   try {
     const stash = await chrome.storage.session.get(STASH_KEY);
     item = stash[STASH_KEY] as StashItem | undefined;
-  } catch {
-    return; // storage API not available; nothing to do.
+  } catch (e) {
+    console.warn("[thilko] chat-import: storage read failed", e);
+    return;
   }
-  if (!item || typeof item !== "object") return;
-  if (typeof item.text !== "string" || item.text.length === 0) return;
+  if (!item || typeof item !== "object") {
+    console.info("[thilko] chat-import: no stash, nothing to do");
+    return;
+  }
+  if (typeof item.text !== "string" || item.text.length === 0) {
+    console.info("[thilko] chat-import: stash had no text");
+    return;
+  }
   if (typeof item.ts !== "number" || Date.now() - item.ts > STALE_MS) {
+    console.info("[thilko] chat-import: stash stale, dropping");
     void chrome.storage.session.remove(STASH_KEY);
     return;
   }
 
   const adapter = ADAPTERS[item.target];
-  if (!adapter || !adapter.matches(location.hostname)) return;
+  if (!adapter || !adapter.matches(location.hostname)) {
+    console.info("[thilko] chat-import: target mismatch", { stashTarget: item.target, host: location.hostname });
+    return;
+  }
+  console.info("[thilko] chat-import: stash found, target=", item.target, "len=", item.text.length);
 
   // Clear immediately so SPA route-changes inside the same chat don't
   // re-fire the paste on every navigation.
@@ -117,6 +130,7 @@ async function run(): Promise<void> {
     console.info("[thilko] chat-import: input not found, leaving text on clipboard");
     return;
   }
+  console.info("[thilko] chat-import: input found", input.tagName, input.getAttribute("id") ?? input.className);
 
   insertText(input, item.text);
 
@@ -125,9 +139,10 @@ async function run(): Promise<void> {
 
   const send = adapter.findSendButton();
   if (send && !send.disabled && send.getAttribute("aria-disabled") !== "true") {
+    console.info("[thilko] chat-import: clicking send");
     send.click();
   } else {
-    console.info("[thilko] chat-import: send button not ready, prefilled only");
+    console.info("[thilko] chat-import: send button not ready, prefilled only", { found: !!send, disabled: send?.disabled });
   }
 }
 

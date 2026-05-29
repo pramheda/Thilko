@@ -22,6 +22,22 @@ import { installPdfRedirectRule } from "./pdf-redirect.js";
 // ── One-time SW boot ────────────────────────────────────────────────────────
 
 (async function boot() {
+  // chrome.storage.session defaults to "TRUSTED_CONTEXTS" — that means the
+  // SW, options page, and popup can read/write it, but content scripts
+  // can't. The chat-import content script on claude.ai / chatgpt.com needs
+  // to read the one-shot continuation stash, so we widen the access level
+  // here. setAccessLevel can only be called from a trusted context, so the
+  // SW boot is the right place. Safe to call on every boot — it's a no-op
+  // when the level is already what we requested.
+  try {
+    await chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
+  } catch (e) {
+    // Pre-Chrome 102 won't have setAccessLevel; pre-115 may not accept the
+    // string literal. Either way, fall through — chat-import will simply
+    // fail to read the stash and leave the text on the clipboard.
+    console.warn("[thilko] session storage setAccessLevel failed", e);
+  }
+
   registerHealthAlarmHandler();
   registerRpcHandler();
   registerChatStreamHandler();
