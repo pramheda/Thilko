@@ -1,6 +1,6 @@
 {
   "name": "thilko",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "description": "Chrome extension: highlight, comment, and chat with AI on any web article or PDF, backed by Supermemory.",

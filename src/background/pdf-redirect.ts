@@ -29,9 +29,13 @@
  *     viewer back, they can turn it off and we'll remove the rule.
  */
 
-const RULE_ID = 1001;
+const RULE_ID_EXT = 1001;       // URLs whose path ends in .pdf (case-insensitive)
+const RULE_ID_ARXIV = 1002;     // arxiv.org/pdf/<id> — no .pdf suffix needed
 
-function buildRule(): chrome.declarativeNetRequest.Rule {
+/** All rule IDs the installer manages — used for atomic remove/add. */
+const ALL_RULE_IDS = [RULE_ID_EXT, RULE_ID_ARXIV];
+
+function buildRules(): chrome.declarativeNetRequest.Rule[] {
   // `\1` captures the full original URL — path + optional query + optional
   // fragment. Chrome's regexSubstitution is a textual splice (no encoding),
   // so the viewer reads `location.search` raw and recombines with
@@ -39,18 +43,34 @@ function buildRule(): chrome.declarativeNetRequest.Rule {
   const viewerBase = chrome.runtime.getURL("src/pdf-viewer/viewer.html");
   const redirectUrl = `${viewerBase}?file=\\1`;
 
-  return {
-    id: RULE_ID,
-    priority: 1,
-    action: {
-      type: chrome.declarativeNetRequest.RuleActionType.REDIRECT,
-      redirect: { regexSubstitution: redirectUrl },
+  const REDIRECT = chrome.declarativeNetRequest.RuleActionType.REDIRECT;
+  const MAIN_FRAME = chrome.declarativeNetRequest.ResourceType.MAIN_FRAME;
+
+  return [
+    {
+      // Path ends in .pdf, .PDF, .Pdf, etc. — the common form for most
+      // publishers and direct PDF links.
+      id: RULE_ID_EXT,
+      priority: 1,
+      action: { type: REDIRECT, redirect: { regexSubstitution: redirectUrl } },
+      condition: {
+        regexFilter: "^(https?://[^?#]+\\.[pP][dD][fF](?:[?#].*)?)$",
+        resourceTypes: [MAIN_FRAME],
+      },
     },
-    condition: {
-      regexFilter: "^(https?://[^?#]+\\.pdf(?:[?#].*)?)$",
-      resourceTypes: [chrome.declarativeNetRequest.ResourceType.MAIN_FRAME],
+    {
+      // arxiv.org serves PDFs at /pdf/<id> WITHOUT a .pdf extension. The
+      // existing extension-based rule misses these — adding a host-scoped
+      // pattern catches them without false positives on /abs/<id>.
+      id: RULE_ID_ARXIV,
+      priority: 1,
+      action: { type: REDIRECT, redirect: { regexSubstitution: redirectUrl } },
+      condition: {
+        regexFilter: "^(https?://arxiv\\.org/pdf/[^?#]+(?:[?#].*)?)$",
+        resourceTypes: [MAIN_FRAME],
+      },
     },
-  };
+  ];
 }
 
 /**
@@ -64,23 +84,23 @@ export async function installPdfRedirectRule(): Promise<void> {
   }
   try {
     await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds: [RULE_ID],
-      addRules: [buildRule()],
+      removeRuleIds: ALL_RULE_IDS,
+      addRules: buildRules(),
     });
   } catch (e) {
-    console.error("[thilko] failed to install PDF redirect rule", e);
+    console.error("[thilko] failed to install PDF redirect rules", e);
   }
 }
 
 /**
- * Remove the PDF redirect rule (used when the user disables PDF support in
+ * Remove the PDF redirect rules (used when the user disables PDF support in
  * settings — wired in M10).
  */
 export async function removePdfRedirectRule(): Promise<void> {
   if (!chrome.declarativeNetRequest?.updateDynamicRules) return;
   try {
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [RULE_ID] });
+    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: ALL_RULE_IDS });
   } catch (e) {
-    console.error("[thilko] failed to remove PDF redirect rule", e);
+    console.error("[thilko] failed to remove PDF redirect rules", e);
   }
 }
