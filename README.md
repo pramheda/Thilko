@@ -102,8 +102,8 @@ The extension never holds an API key. Instead it talks to a **proxy server you c
 
 There are two ways to get a proxy:
 
-- **Use someone else's.** If a friend (or the author) is running a Thilko proxy, ask them for the URL + secret + a personal slot name. Paste the three values into Options. Your data is scoped to your slot.
-- **Run your own.** The proxy is a separate concern from the extension — the author runs a private reference implementation. The exact **wire contract** is documented in [`docs/proxy-contract.md`](./docs/proxy-contract.md); a public open-source proxy implementation is planned for v0.2. In the meantime, anyone can build a compatible proxy in any language against the contract (reference implementation is ~400 lines of TypeScript).
+- **Use someone else's.** If somebody you trust is running a Thilko-compatible proxy, ask them for an install link. Paste it into Options and the extension configures itself. Your data is scoped to your own slot.
+- **Run your own.** The proxy is a separate concern from the extension. The **wire contract** is documented in [`docs/proxy-contract.md`](./docs/proxy-contract.md); a public open-source proxy implementation is planned for v0.2. In the meantime, anyone can build a compatible proxy in any language against the contract (reference implementation is ~400 lines of TypeScript).
 
 Why this separation: the proxy concerns (Codex OAuth, Supermemory schema, rate-limiting, eventually-consistent caching) are independent from the browser extension and have a different deploy story. Keeping them in separate repos prevents either from constraining the other.
 
