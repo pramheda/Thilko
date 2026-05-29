@@ -28,9 +28,17 @@ The proxy is a server **you control** (or your friend controls if you're using t
 
 The proxy keeps a short-lived in-memory write-through cache (default 5 minutes) so that reload-immediately-after-create works reliably. It does not log request bodies by default.
 
+## Open with Claude / Open with ChatGPT
+
+When you click "Open with Claude" or "Open with ChatGPT" in a popover menu, the extension opens a new tab on `claude.ai` or `chatgpt.com` and pastes the full transcript of that highlight's conversation into the chat input, then sends it as your first message. This transfer is **initiated by your explicit click** — no transcript ever leaves the extension to those hosts without it. Anthropic (Claude.ai) or OpenAI (ChatGPT) then receives the transcript as ordinary chat input and is governed by their own privacy policy from that point on.
+
+If you do not click those buttons, no data is sent to Claude.ai or ChatGPT.
+
 ## Excluded sites
 
 By default the extension does **not** activate on these hosts: `claude.ai`, `claude.com`, `chatgpt.com`, `chat.openai.com`, `mail.google.com`, `accounts.google.com`, plus a list of common banking domains. You can edit this list in Options.
+
+A narrow exception: on `claude.ai` and `chatgpt.com` a small content script runs only to perform the one-click handoff described above. It does not read existing chat content, does not run on any other page, and does not communicate with the proxy.
 
 It also does not run on `localhost` unless you explicitly enable it.
 
