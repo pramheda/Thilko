@@ -13,11 +13,11 @@
  * chrome.alarms (next health check). No module-scope live data.
  */
 
-import { onSettingsChange } from "../shared/settings.js";
+import { loadSettings, onSettingsChange } from "../shared/settings.js";
 import { ensureHealthAlarm, registerHealthAlarmHandler, runHealthCheck } from "./health-check.js";
 import { registerRpcHandler } from "./rpc.js";
 import { registerChatStreamHandler } from "./chat-stream.js";
-import { installPdfRedirectRule } from "./pdf-redirect.js";
+import { installPdfRedirectRule, removePdfRedirectRule } from "./pdf-redirect.js";
 
 // ── One-time SW boot ────────────────────────────────────────────────────────
 
@@ -42,9 +42,24 @@ import { installPdfRedirectRule } from "./pdf-redirect.js";
   registerRpcHandler();
   registerChatStreamHandler();
   await ensureHealthAlarm();
-  await installPdfRedirectRule();
+  await syncPdfRedirectRule();
   await runHealthCheck();
 })().catch((e) => console.error("[thilko] background boot failed", e));
+
+/**
+ * Install or remove the PDF redirect rule based on the user's
+ * `pdfAutoRedirect` setting. Default behaviour (setting absent or false):
+ * PDFs go to Chrome's native viewer. Setting must be flipped on for the
+ * pre-v0.1.5 "open everything in Thilko" behaviour.
+ */
+async function syncPdfRedirectRule(): Promise<void> {
+  const settings = await loadSettings();
+  if (settings?.pdfAutoRedirect) {
+    await installPdfRedirectRule();
+  } else {
+    await removePdfRedirectRule();
+  }
+}
 
 // ── Event hooks (must be registered at top level so Chrome re-wires them
 //     after SW restart). ─────────────────────────────────────────────────────
@@ -58,15 +73,15 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       console.warn("[thilko] could not auto-open options on install", e);
     }
   }
-  // Update or re-install → ensure alarm + dNR rule are wired up.
+  // Update or re-install → ensure alarm + dNR rule are in their proper state.
   await ensureHealthAlarm();
-  await installPdfRedirectRule();
+  await syncPdfRedirectRule();
   await runHealthCheck();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await ensureHealthAlarm();
-  await installPdfRedirectRule();
+  await syncPdfRedirectRule();
   await runHealthCheck();
 });
 
@@ -74,19 +89,47 @@ chrome.runtime.onStartup.addListener(async () => {
 // expects the icon to update without waiting up to a minute for the alarm).
 onSettingsChange(() => {
   runHealthCheck().catch((e) => console.error("[thilko] settings-change health check failed", e));
+  // pdfAutoRedirect may have just flipped — re-sync the DNR rule.
+  syncPdfRedirectRule().catch((e) => console.error("[thilko] PDF redirect sync failed", e));
 });
 
-// Action button → open the library page in a new tab. If one is already
-// open for this extension, focus it instead of creating a duplicate.
-chrome.action.onClicked.addListener(async () => {
+/** URL heuristic for PDFs the action-click switch handles. Mirrors the
+ *  patterns the DNR redirect rule uses — keep in sync with pdf-redirect.ts. */
+function isPdfTabUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  // .pdf extension (case-insensitive) on http/https
+  if (/^https?:\/\/[^?#]+\.pdf(?:[?#]|$)/i.test(url)) return true;
+  // arxiv's bare /pdf/<id> form (no extension)
+  if (/^https?:\/\/arxiv\.org\/pdf\//i.test(url)) return true;
+  return false;
+}
+
+// Action button:
+//   - On a PDF tab → reopen the same PDF in Thilko's pdf.js viewer in a
+//     new tab. Chrome's native viewer stays as the default for browsing;
+//     this gives a one-click "switch to Thilko to annotate" path.
+//   - Otherwise → open the library page (focus an existing one if open).
+chrome.action.onClicked.addListener(async (tab) => {
+  const tabUrl = tab.url ?? "";
+  if (isPdfTabUrl(tabUrl)) {
+    const viewerUrl = chrome.runtime.getURL("src/pdf-viewer/viewer.html") + "?file=" + tabUrl;
+    try {
+      await chrome.tabs.create({ url: viewerUrl, active: true });
+      return;
+    } catch (e) {
+      console.warn("[thilko] could not open PDF in Thilko viewer", e);
+      // fall through to the library behaviour
+    }
+  }
+
   const libraryUrl = chrome.runtime.getURL("src/library/library.html");
   try {
     const existing = await chrome.tabs.query({ url: chrome.runtime.getURL("src/library/library.html") });
     if (existing.length > 0 && existing[0]?.id !== undefined) {
-      const tab = existing[0];
-      await chrome.tabs.update(tab.id!, { active: true });
-      if (tab.windowId !== undefined) {
-        await chrome.windows.update(tab.windowId, { focused: true });
+      const t = existing[0];
+      await chrome.tabs.update(t.id!, { active: true });
+      if (t.windowId !== undefined) {
+        await chrome.windows.update(t.windowId, { focused: true });
       }
       return;
     }

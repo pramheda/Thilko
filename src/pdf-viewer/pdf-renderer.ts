@@ -16,7 +16,13 @@ import workerSrc from "pdfjs-dist/build/pdf.worker.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
 
-const RENDER_SCALE = 1.5;
+// 2.0 was 1.5 in v0.1.4. Higher scale produces a sharper canvas + a denser
+// text-layer span grid, which materially improves both visual quality on
+// modern displays AND the text-layer hit detection used by the highlight
+// flow (more text rectangles = less "this word can't be selected" gaps).
+// Memory cost is ~1.8× per page render, acceptable for the typical paper
+// being read.
+const RENDER_SCALE = 2.0;
 
 export interface PdfRenderResult {
   pdf: pdfjsLib.PDFDocumentProxy;

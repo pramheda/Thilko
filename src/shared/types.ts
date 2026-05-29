@@ -35,6 +35,13 @@ export interface Settings {
    * empty marker records.
    */
   autoPersistHighlights: boolean;
+  /**
+   * When true, PDFs are auto-redirected from Chrome's native viewer into
+   * Thilko's pdf.js viewer (the v0.1.4 behaviour). Default false: PDFs open
+   * in Chrome's native viewer for best rendering quality, and the user
+   * switches into Thilko's viewer by clicking the extension toolbar icon.
+   */
+  pdfAutoRedirect: boolean;
 }
 
 /** Subset of Settings safe to expose to the content script (no secrets). */

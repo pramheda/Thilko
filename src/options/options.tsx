@@ -30,6 +30,7 @@ interface FormState {
   exclusionDomains: string[];
   localhostEnabled: boolean;
   autoPersistHighlights: boolean;
+  pdfAutoRedirect: boolean;
 }
 
 interface FormErrors {
@@ -118,6 +119,7 @@ function App() {
     exclusionDomains: [...DEFAULT_EXCLUSION_DOMAINS],
     localhostEnabled: false,
     autoPersistHighlights: false,
+    pdfAutoRedirect: false,
   });
   const [newDomain, setNewDomain] = useState("");
   const [showSecret, setShowSecret] = useState(false);
@@ -144,6 +146,7 @@ function App() {
           exclusionDomains: settings.exclusionDomains,
           localhostEnabled: settings.localhostEnabled,
           autoPersistHighlights: settings.autoPersistHighlights,
+          pdfAutoRedirect: settings.pdfAutoRedirect,
         });
         setOriginalLoaded(settings);
       }
@@ -163,6 +166,7 @@ function App() {
         exclusionDomains: s.exclusionDomains,
         localhostEnabled: s.localhostEnabled,
         autoPersistHighlights: s.autoPersistHighlights,
+        pdfAutoRedirect: s.pdfAutoRedirect,
       });
       setOriginalLoaded(s);
     } else {
@@ -174,6 +178,7 @@ function App() {
         exclusionDomains: [...DEFAULT_EXCLUSION_DOMAINS],
         localhostEnabled: false,
         autoPersistHighlights: false,
+        pdfAutoRedirect: false,
       });
       setOriginalLoaded(null);
     }
@@ -239,6 +244,7 @@ function App() {
         exclusionDomains: form.exclusionDomains,
         localhostEnabled: form.localhostEnabled,
         autoPersistHighlights: form.autoPersistHighlights,
+        pdfAutoRedirect: form.pdfAutoRedirect,
       });
       await saveSettings(next);
       setForm({
@@ -249,6 +255,7 @@ function App() {
         exclusionDomains: next.exclusionDomains,
         localhostEnabled: next.localhostEnabled,
         autoPersistHighlights: next.autoPersistHighlights,
+        pdfAutoRedirect: next.pdfAutoRedirect,
       });
       setOriginalLoaded(next);
       setClaimMsg({ kind: "ok", text: `Connected to slot "${data.slot}". Testing connection…` });
@@ -266,7 +273,7 @@ function App() {
     } finally {
       setClaiming(false);
     }
-  }, [form.devMode, form.exclusionDomains, form.localhostEnabled, form.autoPersistHighlights]);
+  }, [form.devMode, form.exclusionDomains, form.localhostEnabled, form.autoPersistHighlights, form.pdfAutoRedirect]);
 
   // Auto-claim if the page was opened with a claim token in the URL.
   useEffect(() => {
@@ -289,7 +296,7 @@ function App() {
   const errors = useMemo(() => validateForm(form), [form]);
   const formValid = Object.values(errors).every((e) => !e);
   const isDirty = useMemo(() => {
-    if (!originalLoaded) return form.proxyUrl !== "" || form.proxySecret !== "" || form.slot !== "" || form.devMode || form.autoPersistHighlights;
+    if (!originalLoaded) return form.proxyUrl !== "" || form.proxySecret !== "" || form.slot !== "" || form.devMode || form.autoPersistHighlights || form.pdfAutoRedirect;
     return (
       originalLoaded.proxyUrl !== form.proxyUrl ||
       originalLoaded.proxySecret !== form.proxySecret ||
@@ -297,6 +304,7 @@ function App() {
       originalLoaded.devMode !== form.devMode ||
       originalLoaded.localhostEnabled !== form.localhostEnabled ||
       originalLoaded.autoPersistHighlights !== form.autoPersistHighlights ||
+      originalLoaded.pdfAutoRedirect !== form.pdfAutoRedirect ||
       !sameDomains(originalLoaded.exclusionDomains, form.exclusionDomains)
     );
   }, [originalLoaded, form]);
@@ -499,6 +507,21 @@ function App() {
           </span>
           <span className="field-hint">
             <strong>Off by default.</strong> When off, highlighting text just paints the local marker — the highlight is only saved to Supermemory once you add a comment or send a message to Dabbis-AI. Keeps your memory clean of "empty marker" records. Turn on if you want every highlight remembered even without notes.
+          </span>
+        </label>
+
+        <label className="field" style={{ marginTop: 8 }}>
+          <span className="field-label">
+            <input
+              type="checkbox"
+              checked={form.pdfAutoRedirect}
+              onChange={(e) => setForm((f) => ({ ...f, pdfAutoRedirect: e.target.checked }))}
+              style={{ marginRight: 8, verticalAlign: "middle" }}
+            />
+            Auto-open PDFs in Thilko's viewer
+          </span>
+          <span className="field-hint">
+            <strong>Off by default.</strong> When off, PDFs open in Chrome's native viewer for best rendering quality, and clicking the extension toolbar icon on a PDF tab opens the same PDF in Thilko's viewer for annotation. Turn on if you always want Thilko's viewer to take over PDF navigations.
           </span>
         </label>
 

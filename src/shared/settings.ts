@@ -35,6 +35,10 @@ export const SettingsSchema = z.object({
   localhostEnabled: z.boolean().default(false),
   devMode: z.boolean().default(false),
   autoPersistHighlights: z.boolean().default(false),
+  /** When true, PDFs are auto-redirected from Chrome's native viewer into
+   *  Thilko's pdf.js viewer. Default false (Chrome's viewer handles PDFs;
+   *  clicking the extension toolbar icon opens the same PDF in Thilko). */
+  pdfAutoRedirect: z.boolean().default(false),
 });
 
 export type ValidatedSettings = z.infer<typeof SettingsSchema>;
