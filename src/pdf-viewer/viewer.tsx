@@ -17,7 +17,8 @@
  */
 
 import "./pdf-viewer.css";
-import { renderPdf } from "./pdf-renderer.js";
+import { renderPdf, type PdfRenderResult } from "./pdf-renderer.js";
+import { installFindBar } from "./find-bar.js";
 import { bootLifecycle } from "../content/index.js";
 import { deriveArticleId } from "../shared/url.js";
 import type { RpcRequest, RpcResponse } from "../shared/messages.js";
@@ -78,7 +79,20 @@ function deriveTitleFromUrl(url: string): string {
   }
 }
 
-function renderShell(): { toolbar: HTMLElement; pages: HTMLElement; titleEl: HTMLElement; metaEl: HTMLElement; bannerSlot: HTMLElement } {
+interface ViewerShell {
+  toolbar: HTMLElement;
+  /** Stage element — find bar overlays this. */
+  pdfStage: HTMLDivElement;
+  /** Outer scroll container — required by PDFViewer's layout math. */
+  pdfContainer: HTMLDivElement;
+  /** Inner div with class "pdfViewer" — where PDFViewer mounts pages. */
+  pdfViewerEl: HTMLDivElement;
+  titleEl: HTMLElement;
+  metaEl: HTMLElement;
+  bannerSlot: HTMLElement;
+}
+
+function renderShell(): ViewerShell {
   const root = document.getElementById("root");
   if (!root) throw new Error("no #root element");
   const viewer = document.createElement("div");
@@ -98,12 +112,24 @@ function renderShell(): { toolbar: HTMLElement; pages: HTMLElement; titleEl: HTM
   const bannerSlot = document.createElement("div");
   viewer.appendChild(bannerSlot);
 
-  const pages = document.createElement("div");
-  pages.className = "viewer-pages";
-  viewer.appendChild(pages);
+  // PDFViewer's constructor asserts its container is `position: absolute`
+  // (pdf_viewer.mjs:7992). We satisfy this by wrapping the scroll container
+  // in a flex item (.pdf-stage) that grows to fill remaining vertical space,
+  // then letting .pdf-container fill the stage absolutely. The inner
+  // .pdfViewer div is where PDFViewer mounts page wrappers as children.
+  const pdfStage = document.createElement("div");
+  pdfStage.className = "pdf-stage";
+  const pdfContainer = document.createElement("div");
+  pdfContainer.id = "viewerContainer";
+  pdfContainer.className = "pdf-container";
+  const pdfViewerEl = document.createElement("div");
+  pdfViewerEl.className = "pdfViewer";
+  pdfContainer.appendChild(pdfViewerEl);
+  pdfStage.appendChild(pdfContainer);
+  viewer.appendChild(pdfStage);
 
   root.replaceChildren(viewer);
-  return { toolbar, pages, titleEl, metaEl, bannerSlot };
+  return { toolbar, pdfStage, pdfContainer, pdfViewerEl, titleEl, metaEl, bannerSlot };
 }
 
 function showError(slot: HTMLElement, pdfUrl: string, reason: string): void {
@@ -148,17 +174,26 @@ async function init(): Promise<void> {
   const { pdfUrl } = parts;
   document.title = `Thilko — ${deriveTitleFromUrl(pdfUrl)}`;
 
-  const { pages, titleEl, metaEl, bannerSlot } = renderShell();
+  const { pdfStage, pdfContainer, pdfViewerEl, titleEl, metaEl, bannerSlot } = renderShell();
   showBanner(bannerSlot, parts);
 
-  // Render the PDF first so the text layer is in the DOM before bootLifecycle
-  // tries to anchor any existing highlights.
+  // Mount the PDF. PDFViewer renders pages lazily as the user scrolls;
+  // bootLifecycle's anchor flow treats not-yet-rendered text layers as
+  // pending rather than orphaned and retries on the textlayerrendered
+  // event (delivered via the EventBus we pass through below).
   let title = deriveTitleFromUrl(pdfUrl);
+  let pdfEventBus: PdfRenderResult["eventBus"] | null = null;
   try {
-    const result = await renderPdf(pdfUrl, pages);
+    const result = await renderPdf({
+      url: pdfUrl,
+      container: pdfContainer,
+      viewer: pdfViewerEl,
+    });
     if (result.title) title = result.title;
     titleEl.textContent = title;
     metaEl.textContent = `${result.pdf.numPages} page${result.pdf.numPages === 1 ? "" : "s"}`;
+    pdfEventBus = result.eventBus;
+    installFindBar({ stage: pdfStage, eventBus: result.eventBus, findController: result.findController });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     showError(bannerSlot, pdfUrl, msg);
@@ -181,6 +216,7 @@ async function init(): Promise<void> {
     },
     contentType: "pdf",
     autoPersistHighlights,
+    pdfEventBus: pdfEventBus ?? undefined,
   });
 }
 

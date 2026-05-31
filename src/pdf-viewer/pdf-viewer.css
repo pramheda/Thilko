@@ -24,6 +24,10 @@
 
 * { box-sizing: border-box; }
 
+html, body, #root {
+  height: 100%;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -34,7 +38,8 @@ body {
 .viewer {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
 }
 
 .viewer-toolbar {
@@ -74,51 +79,34 @@ body {
   text-decoration: underline;
 }
 
-.viewer-pages {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 0 48px;
-}
-
-.viewer-page {
+/* PDFViewer stage + scroll container.
+ *
+ * PDFViewer's constructor asserts that its `container` is `position: absolute`
+ * (pdf_viewer.mjs:7992). To satisfy that while keeping the toolbar/banner in
+ * the normal flex flow, we wrap the absolute scroll container in a flex item
+ * (.pdf-stage) that grows to fill remaining vertical space, and inset the
+ * scroll container to fill the stage.
+ *
+ * Page wrapper, canvas, and text-layer geometry is owned by
+ * `pdfjs-dist/web/pdf_viewer.css` (imported from the renderer) — we DO NOT
+ * redeclare those rules here.
+ */
+.pdf-stage {
   position: relative;
-  background: white;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  /* width + height are set inline based on the PDF viewport. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
-.viewer-page canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-/* pdf.js text layer — invisible text overlay aligned with the canvas so the
- * user can select. The text spans are absolutely positioned by pdf.js. */
-.textLayer {
+.pdf-container {
   position: absolute;
   inset: 0;
-  overflow: hidden;
-  opacity: 1;
-  line-height: 1;
-  text-align: initial;
-  -webkit-font-smoothing: antialiased;
-  forced-color-adjust: none;
-  transform-origin: 0 0;
-  caret-color: var(--accent);
+  overflow: auto;
+  background: var(--bg);
 }
 
-.textLayer :is(span, br) {
-  color: transparent;
-  position: absolute;
-  white-space: pre;
-  cursor: text;
-  transform-origin: 0% 0%;
-}
-
-.textLayer ::selection {
+/* Thilko's accent for text selection inside the pdf.js text layer. Lives
+ * in our CSS so the brand colour overrides pdf.js's default. */
+.pdfViewer .textLayer ::selection {
   background: rgba(79, 70, 229, 0.35);
 }
 
@@ -160,4 +148,93 @@ body {
 .viewer-banner a {
   color: var(--accent);
   font-weight: 500;
+}
+
+/* Find bar — floats top-right inside the PDF stage, above the canvas.
+ *
+ * Compact layout: [input] [count] [↑] [↓] [×]. Hidden by default; the
+ * `hidden` attribute toggles visibility from `installFindBar`. Cmd/Ctrl+F
+ * opens; Esc closes; Enter / Shift+Enter step through matches.
+ */
+.thilko-find-bar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--panel);
+  border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.thilko-find-bar[hidden] {
+  display: none;
+}
+
+.thilko-find-input {
+  width: 180px;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.thilko-find-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.thilko-find-status {
+  min-width: 56px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.thilko-find-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.thilko-find-btn:hover {
+  background: color-mix(in srgb, var(--muted) 15%, transparent);
+  color: var(--text);
+}
+
+.thilko-find-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.thilko-find-close {
+  font-size: 18px;
+}
+
+.thilko-find-bar.thilko-find-notfound .thilko-find-input {
+  border-color: var(--error);
+}
+
+.thilko-find-bar.thilko-find-notfound .thilko-find-status {
+  color: var(--error);
 }

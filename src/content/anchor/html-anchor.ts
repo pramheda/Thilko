@@ -85,7 +85,20 @@ export interface AnchorMatchOrphan {
   kind: "orphan";
   reason: string;
 }
-export type AnchorMatchResult = AnchorMatchFound | AnchorMatchOrphan;
+/**
+ * PDF-specific "not yet rendered" state — distinct from `orphan` so the
+ * caller does NOT persist orphan=true to the backend. The pdfjs PDFViewer
+ * renders pages and text layers lazily as the user scrolls; a highlight on
+ * page 42 of a 60-page paper is `pending` until that page's text layer
+ * exists, at which point the textlayerrendered event re-triggers anchoring.
+ */
+export interface AnchorMatchPending {
+  kind: "pending";
+  reason: string;
+  /** PDF page number the caller should re-anchor when its text layer renders. */
+  pdfPage: number;
+}
+export type AnchorMatchResult = AnchorMatchFound | AnchorMatchOrphan | AnchorMatchPending;
 
 /**
  * Find a Range in the current document that matches the Anchor.
@@ -99,13 +112,15 @@ export async function rangeFromAnchor(anchor: Anchor, scope?: Node): Promise<Anc
   // PDF anchors and HTML anchors share the same TextQuote+TextPosition
   // recovery logic — the difference is the SCOPE we hand the matcher:
   //   - HTML: document.body (or caller-supplied scope).
-  //   - PDF: the `.viewer-page[data-page-number=N]` wrapper that this anchor
-  //     was created against. PDFs frequently contain text repeated across
-  //     pages (headers, footers, common phrases like "Conclusion"); searching
+  //   - PDF: the `.page[data-page-number=N]` wrapper that pdfjs's PDFViewer
+  //     mounts for this anchor's page (legacy `.viewer-page[...]` also
+  //     accepted). PDFs frequently contain text repeated across pages
+  //     (headers, footers, common phrases like "Conclusion"); searching
   //     document-wide would let the quote bind to the wrong page on reload.
-  // If the PDF page wrapper isn't in the DOM yet (still rendering) we return
-  // a specific orphan reason — the orphan stabilizer will retry once the
-  // viewer finishes painting later pages.
+  // If the PDF page wrapper or its text layer isn't in the DOM yet (lazy
+  // text-layer rendering) we return a `pending` result — bootLifecycle
+  // subscribes to pdfjs's `textlayerrendered` EventBus and retries when
+  // that page lands.
   if (anchor.type !== "html" && anchor.type !== "pdf") {
     return { kind: "orphan", reason: `Unsupported anchor type '${(anchor as { type: string }).type}'` };
   }
@@ -119,9 +134,27 @@ export async function rangeFromAnchor(anchor: Anchor, scope?: Node): Promise<Anc
   if (scope) {
     root = scope;
   } else if (anchor.type === "pdf") {
-    const pageEl = document.querySelector(`.viewer-page[data-page-number="${anchor.page}"]`);
+    // PDFViewer (pdfjs reference component) mounts each page as
+    //   `<div class="page" data-page-number="N">…</div>` inside `.pdfViewer`.
+    // We also accept the legacy `.viewer-page[data-page-number=N]` selector
+    // that an earlier hand-rolled renderer produced, so test fixtures or
+    // a renderer rollback keep working.
+    //
+    // The text layer (`<div class="textLayer">`) is added LATER by pdfjs
+    // once the page's text content finishes decoding — for an off-screen
+    // page that hasn't been scrolled into view, neither the page wrapper
+    // nor the text layer may exist yet. We return `pending` rather than
+    // `orphan` in either case; the caller subscribes to `textlayerrendered`
+    // on the pdfjs EventBus and re-anchors when that page lands.
+    const pageEl = document.querySelector(
+      `.pdfViewer .page[data-page-number="${anchor.page}"], .viewer-page[data-page-number="${anchor.page}"]`,
+    );
     if (!pageEl) {
-      return { kind: "orphan", reason: `PDF page ${anchor.page} not yet rendered` };
+      return { kind: "pending", reason: `PDF page ${anchor.page} not yet allocated`, pdfPage: anchor.page };
+    }
+    const textLayer = pageEl.querySelector(".textLayer");
+    if (!textLayer || textLayer.childElementCount === 0) {
+      return { kind: "pending", reason: `PDF page ${anchor.page} text layer not yet rendered`, pdfPage: anchor.page };
     }
     root = pageEl;
   } else {

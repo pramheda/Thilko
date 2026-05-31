@@ -1,41 +1,112 @@
 /**
- * Thin wrapper around pdfjs-dist for the Thilko viewer.
+ * pdf.js renderer using the official PDFViewer reference components.
  *
- * Renders a PDF document into a sequence of `<div class="viewer-page"
- * data-page-number="N">` wrappers, each containing a `<canvas>` for the
- * visual + a `<div class="textLayer">` for selectable text. The text-layer
- * structure follows pdf.js conventions exactly so apache-annotator's
- * TextQuote matcher works on the resulting DOM with no special-casing.
+ * Replaces a hand-rolled implementation that produced soft pages with
+ * partially-broken text layers. PDFViewer handles:
+ *   - HiDPI / devicePixelRatio output scaling (real retina backing store,
+ *     fixing the sharpness gap the old renderer had at pdf-renderer.ts:17)
+ *   - Lazy text-layer rendering per visible page
+ *   - Page-width fitting + scroll integration
+ *   - Find dialog wiring (PDFFindController, used in Block 4)
+ *   - Proper text-layer geometry (no "can't highlight this word" gaps
+ *     for fonts whose char mapping pdf.js can recover)
  *
- * The worker is bundled from `pdfjs-dist/build/pdf.worker.mjs` (loaded via
- * Vite's `?url` import) — no CDN, no external fetch.
+ * Asset wiring (Block 2):
+ *   - cMapUrl + cMapPacked → Adobe CMap tables for CID-keyed (CJK) fonts.
+ *   - standardFontDataUrl → 14 PDF standard fonts (Foxit-supplied Type 1
+ *     equivalents) for documents that reference them by name without
+ *     embedding the glyph data. Most LaTeX academic PDFs trip over this.
+ *   - wasmUrl → jbig2 / openjpeg / qcms wasm helpers (image decoding,
+ *     colour profile conversion).
+ *   - useSystemFonts: true → fall back to the OS fonts when neither the
+ *     PDF nor the standard-font bundle supplies a glyph.
+ *   - enableXfa: true → render dynamic XFA forms (mostly enterprise
+ *     paperwork; harmless for everything else).
+ *
+ * The three directories live at /cmaps/, /standard_fonts/, /wasm/ at the
+ * extension root, copied from `node_modules/pdfjs-dist` into `dist/` by
+ * the copyPdfjsAssets vite plugin. They are NOT in web_accessible_resources
+ * because the pdf-viewer extension page (and its pdf.js worker) has same-
+ * origin access to extension resources; WAR is only needed for resources
+ * loaded by external web origins.
+ *
+ * Lazy-anchor handling for highlights on not-yet-rendered pages lives
+ * in Block 3 (the caller treats unrendered text layers as pending,
+ * not orphaned, and retries on the textlayerrendered event).
  */
 
 import * as pdfjsLib from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.mjs?url";
+import "pdfjs-dist/web/pdf_viewer.css";
+import {
+  EventBus,
+  PDFViewer,
+  PDFLinkService,
+  PDFFindController,
+} from "pdfjs-dist/web/pdf_viewer.mjs";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
-
-// 2.0 was 1.5 in v0.1.4. Higher scale produces a sharper canvas + a denser
-// text-layer span grid, which materially improves both visual quality on
-// modern displays AND the text-layer hit detection used by the highlight
-// flow (more text rectangles = less "this word can't be selected" gaps).
-// Memory cost is ~1.8× per page render, acceptable for the typical paper
-// being read.
-const RENDER_SCALE = 2.0;
 
 export interface PdfRenderResult {
   pdf: pdfjsLib.PDFDocumentProxy;
   title: string | null;
+  /** EventBus exposed so the caller (viewer.tsx, bootLifecycle in Block 3,
+   *  the find bar in Block 4) can listen for `textlayerrendered`, `pagesinit`,
+   *  `pagesloaded`, find events, etc. */
+  eventBus: EventBus;
+  /** Find controller exposed for Block 4's compact find bar. */
+  findController: PDFFindController;
+  /** Returned so callers can drive scrolling / scale changes if needed. */
+  viewer: PDFViewer;
+}
+
+export interface RenderPdfOptions {
+  /** The original PDF URL to fetch. */
+  url: string;
+  /**
+   * Scroll container. Must be positioned (relative/absolute/fixed) and
+   * have a defined size so PDFViewer can compute page layout against it.
+   * Typed as HTMLDivElement because PDFViewer's constructor refines its
+   * input that way.
+   */
+  container: HTMLDivElement;
+  /**
+   * Inner div with class "pdfViewer" — PDFViewer adds its page elements
+   * as children of this node. Must be a direct child of `container`.
+   */
+  viewer: HTMLDivElement;
 }
 
 /**
- * Fetch + render a PDF into `container`. Resolves once every page's canvas
- * AND text layer have been painted. Throws on fetch failure or pdfjs error
- * so the caller can show an error banner.
+ * Fetch + mount a PDF into the given container/viewer. Resolves once the
+ * document is loaded and PDFViewer has been wired with it; individual
+ * page renders happen lazily as the user scrolls. Listen on the returned
+ * eventBus for per-page completion via `textlayerrendered`.
  */
-export async function renderPdf(url: string, container: HTMLElement): Promise<PdfRenderResult> {
-  const loadingTask = pdfjsLib.getDocument({ url });
+export async function renderPdf(opts: RenderPdfOptions): Promise<PdfRenderResult> {
+  const eventBus = new EventBus();
+  const linkService = new PDFLinkService({ eventBus });
+  const findController = new PDFFindController({ eventBus, linkService });
+
+  const pdfViewer = new PDFViewer({
+    container: opts.container,
+    viewer: opts.viewer,
+    eventBus,
+    linkService,
+    findController,
+  });
+  linkService.setViewer(pdfViewer);
+
+  const loadingTask = pdfjsLib.getDocument({
+    url: opts.url,
+    // Asset wiring — see file header. URLs MUST include the trailing slash.
+    cMapUrl: chrome.runtime.getURL("cmaps/"),
+    cMapPacked: true,
+    standardFontDataUrl: chrome.runtime.getURL("standard_fonts/"),
+    wasmUrl: chrome.runtime.getURL("wasm/"),
+    useSystemFonts: true,
+    enableXfa: true,
+  });
   const pdf = await loadingTask.promise;
 
   let title: string | null = null;
@@ -45,49 +116,16 @@ export async function renderPdf(url: string, container: HTMLElement): Promise<Pd
     const raw = info.Title;
     if (typeof raw === "string" && raw.trim().length > 0) title = raw.trim();
   } catch {
-    // metadata is optional; carry on
+    // metadata is optional
   }
 
-  container.replaceChildren();
+  pdfViewer.setDocument(pdf);
+  linkService.setDocument(pdf, null);
 
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-    const page = await pdf.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: RENDER_SCALE });
+  // Fit to page width once the first page's dimensions are known.
+  eventBus.on("pagesinit", () => {
+    pdfViewer.currentScaleValue = "page-width";
+  });
 
-    const pageEl = document.createElement("div");
-    pageEl.className = "viewer-page";
-    pageEl.setAttribute("data-page-number", String(pageNumber));
-    pageEl.style.width = `${viewport.width}px`;
-    pageEl.style.height = `${viewport.height}px`;
-    container.appendChild(pageEl);
-
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.floor(viewport.width);
-    canvas.height = Math.floor(viewport.height);
-    pageEl.appendChild(canvas);
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error(`canvas 2d context unavailable on page ${pageNumber}`);
-
-    const textLayerEl = document.createElement("div");
-    textLayerEl.className = "textLayer";
-    textLayerEl.style.setProperty("--scale-factor", String(RENDER_SCALE));
-    pageEl.appendChild(textLayerEl);
-
-    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
-
-    const textContent = await page.getTextContent();
-    // pdf.js 5.x exposes the TextLayer class for rendering selectable text.
-    // It paints positioned spans inside the textLayer container.
-    const TextLayerCtor = (pdfjsLib as unknown as { TextLayer?: new (opts: {
-      textContentSource: unknown;
-      container: HTMLElement;
-      viewport: pdfjsLib.PageViewport;
-    }) => { render: () => Promise<void> } }).TextLayer;
-    if (!TextLayerCtor) throw new Error("pdfjs.TextLayer constructor unavailable (expected pdfjs ^5)");
-    const layer = new TextLayerCtor({ textContentSource: textContent, container: textLayerEl, viewport });
-    await layer.render();
-  }
-
-  return { pdf, title };
+  return { pdf, title, eventBus, findController, viewer: pdfViewer };
 }

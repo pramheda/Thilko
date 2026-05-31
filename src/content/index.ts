@@ -161,6 +161,15 @@ interface RenderedRecord {
   highlight: Highlight;
   rendered: RenderedHighlight | null;
   orphan: boolean;
+  /**
+   * PDF-only: page wrapper or text layer wasn't in the DOM yet at the time
+   * of the last anchor attempt. The textlayerrendered listener will retry
+   * when pdfjs renders that page. Pending records are NOT orphans — we do
+   * not persist `orphaned: true` for them.
+   */
+  pending: boolean;
+  /** PDF page this record is waiting on; set iff `pending` is true. */
+  pendingPdfPage: number | null;
   /** strategy of the successful match, for diagnostics. */
   matchStrategy: MatchStrategy | null;
 }
@@ -407,12 +416,28 @@ async function initPage(): Promise<void> {
  * match the article being viewed (NOT the chrome-extension page URL for the
  * PDF viewer case).
  */
+/**
+ * Minimal interface for the pdfjs EventBus the caller can hand us. Typed
+ * structurally (just the `on` we need) so content/index.ts doesn't pull in
+ * a pdfjs-dist dependency — the PDF viewer entry point owns that import.
+ */
+export interface PdfEventBus {
+  on(eventName: "textlayerrendered", listener: (evt: { pageNumber: number }) => void): void;
+}
+
 export async function bootLifecycle(opts: {
   context: PageContext;
   contentType: "html" | "pdf";
   enableDevBridge?: boolean;
   /** Mirrors the user setting; when true, toolbar actions persist immediately. */
   autoPersistHighlights?: boolean;
+  /**
+   * The pdfjs PDFViewer EventBus (PDF mode only). When provided we listen
+   * for `textlayerrendered` and re-anchor `pending` highlights as their
+   * pages render in. Without this, off-screen-page highlights would orphan
+   * until the user scrolls and triggers the generic MutationObserver.
+   */
+  pdfEventBus?: PdfEventBus;
 }): Promise<void> {
   state.context = opts.context;
   state.contentType = opts.contentType;
@@ -427,7 +452,18 @@ export async function bootLifecycle(opts: {
   installSelectionUi();
   installSidebar();
 
+  if (opts.contentType === "pdf" && opts.pdfEventBus) {
+    installPdfPageRenderListener(opts.pdfEventBus);
+  }
+
   await loadAndRenderExistingHighlights({ allowOrphanPersist: false });
+
+  if (opts.contentType === "pdf") {
+    // Closes the race where `textlayerrendered` fires between renderer mount
+    // and Phase 3 storing pending records. Synchronous in the loop, then
+    // notifySidebar in retryPendingForPdfPage takes care of UI updates.
+    await catchUpPdfPendingAfterLoad();
+  }
 
   // Schedule a stabilization pass: if content arrives after document_idle
   // (SPA hydration, lazy-loaded PDF pages, etc.), a MutationObserver fires
@@ -743,6 +779,8 @@ async function handleToolbarComment(sel: SelectionState): Promise<void> {
     highlight: localHighlight,
     rendered,
     orphan: false,
+    pending: false,
+    pendingPdfPage: null,
     matchStrategy: "exact",
   });
   // Tell the sidebar immediately so the new highlight shows up in the list
@@ -825,6 +863,8 @@ async function handleToolbarAskAi(sel: SelectionState): Promise<void> {
     highlight: localHighlight,
     rendered,
     orphan: false,
+    pending: false,
+    pendingPdfPage: null,
     matchStrategy: "exact",
   });
   notifySidebar();
@@ -910,6 +950,8 @@ async function loadAndRenderExistingHighlights(opts: LoadOptions): Promise<void>
   for (const { highlight, result } of matches) {
     let rendered: RenderedHighlight | null = null;
     let orphan = false;
+    let pending = false;
+    let pendingPdfPage: number | null = null;
     let matchStrategy: MatchStrategy | null = null;
 
     if (result.kind === "found") {
@@ -925,15 +967,29 @@ async function loadAndRenderExistingHighlights(opts: LoadOptions): Promise<void>
         log(`render failed for ${highlight.id.slice(0, 8)}:`, e);
         orphan = true;
       }
+    } else if (result.kind === "pending") {
+      // PDF page / text layer not rendered yet — bootLifecycle's
+      // textlayerrendered listener will retry when the page lands.
+      pending = true;
+      pendingPdfPage = result.pdfPage;
+      log(`anchor pending for ${highlight.id.slice(0, 8)} on PDF page ${result.pdfPage}: ${result.reason}`);
     } else {
       orphan = true;
       log(`anchor not found for ${highlight.id.slice(0, 8)}: ${result.reason}`);
     }
 
     state.records.set(highlight.id, {
-      highlight: { ...highlight, orphaned: orphan },
+      // While pending, preserve the server's `orphaned` flag verbatim — we
+      // haven't proven anything yet (page just isn't rendered), and we need
+      // the original value so retryPendingForPdfPage can decide whether to
+      // call updateHighlight({ orphaned: false }) when the page does land.
+      // Once we've actually matched or failed (orphan), we normalize the
+      // flag locally so subsequent reads agree with what we'll persist.
+      highlight: pending ? highlight : { ...highlight, orphaned: orphan },
       rendered,
       orphan,
+      pending,
+      pendingPdfPage,
       matchStrategy,
     });
     // Pre-populate pendingPersists with a resolved promise for any highlight
@@ -941,8 +997,11 @@ async function loadAndRenderExistingHighlights(opts: LoadOptions): Promise<void>
     // for these instead of trying to re-create them.
     state.pendingPersists.set(highlight.id, Promise.resolve());
 
-    // Persist orphan flag transitions only if explicitly allowed (post-stabilization).
-    if (opts.allowOrphanPersist && highlight.orphaned !== orphan) {
+    // Persist orphan flag transitions only if explicitly allowed (post-
+    // stabilization). Skip while `pending` — the page may simply be off-
+    // screen, and persisting orphan=true here would race the
+    // textlayerrendered retry that resolves it.
+    if (opts.allowOrphanPersist && !pending && highlight.orphaned !== orphan) {
       try {
         await rpc({ kind: "updateHighlight", id: highlight.id, patch: { orphaned: orphan } });
         log(`persisted orphan=${orphan} for ${highlight.id.slice(0, 8)}`);
@@ -1030,6 +1089,121 @@ function scheduleOrphanStabilization(): void {
   deadline = self.setTimeout(() => {
     finalize().catch((e) => log("stabilization finalize failed", e));
   }, STABILIZE_DEADLINE_MS);
+}
+
+/**
+ * Subscribe to pdfjs's `textlayerrendered` event and retry anchoring any
+ * `pending` records whose `pendingPdfPage` equals the page that just
+ * rendered. PDFViewer renders text layers lazily as the user scrolls — this
+ * is how page-N highlights catch up without the user waiting through the
+ * 6-second orphan stabilization window.
+ */
+function installPdfPageRenderListener(bus: PdfEventBus): void {
+  bus.on("textlayerrendered", (evt) => {
+    const pageNumber = evt.pageNumber;
+    if (!Number.isFinite(pageNumber)) return;
+    void retryPendingForPdfPage(pageNumber);
+  });
+}
+
+async function retryPendingForPdfPage(pageNumber: number): Promise<void> {
+  // Snapshot the pending records targeting this page; iterating live would
+  // be sensitive to concurrent edits via state.records.
+  const candidates: RenderedRecord[] = [];
+  for (const rec of state.records.values()) {
+    if (rec.pending && rec.pendingPdfPage === pageNumber) candidates.push(rec);
+  }
+  if (candidates.length === 0) return;
+
+  log(`textlayerrendered page ${pageNumber} — retrying ${candidates.length} pending highlight(s)`);
+
+  for (const rec of candidates) {
+    const result = await rangeFromAnchor(rec.highlight.anchor);
+    if (result.kind === "found") {
+      let rendered: RenderedHighlight | null = null;
+      try {
+        rendered = renderHighlight({
+          highlightId: rec.highlight.id,
+          range: result.range,
+          counts: getCounts(rec.highlight.id),
+          onMarkerClick: broadcastMarkerClick,
+        });
+      } catch (e) {
+        log(`render failed on retry for ${rec.highlight.id.slice(0, 8)}:`, e);
+        continue;
+      }
+      state.records.set(rec.highlight.id, {
+        ...rec,
+        highlight: { ...rec.highlight, orphaned: false },
+        rendered,
+        orphan: false,
+        pending: false,
+        pendingPdfPage: null,
+        matchStrategy: result.strategy,
+      });
+      // Persist immediately — the orphan-stabilization finalize may have
+      // already run, or may never run (it short-circuits when there are no
+      // initial orphans). The pending record could have come from a
+      // previously orphan-flagged highlight, so we always reconcile.
+      if (rec.highlight.orphaned !== false) {
+        try {
+          await rpc({ kind: "updateHighlight", id: rec.highlight.id, patch: { orphaned: false } });
+          log(`persisted orphan=false for ${rec.highlight.id.slice(0, 8)} (retry on page ${pageNumber})`);
+        } catch (e) {
+          log(`orphan=false persist failed for ${rec.highlight.id.slice(0, 8)}:`, e);
+        }
+      }
+    } else if (result.kind === "orphan") {
+      // Page text layer is rendered and the quote still can't be found —
+      // this is a real orphan. Demote pending → orphan AND persist now
+      // (we cannot rely on the stabilization finalize: it may have already
+      // run, or may have short-circuited if there were no initial orphans).
+      state.records.set(rec.highlight.id, {
+        ...rec,
+        highlight: { ...rec.highlight, orphaned: true },
+        orphan: true,
+        pending: false,
+        pendingPdfPage: null,
+      });
+      log(`retry orphaned ${rec.highlight.id.slice(0, 8)} on PDF page ${pageNumber}: ${result.reason}`);
+      if (rec.highlight.orphaned !== true) {
+        try {
+          await rpc({ kind: "updateHighlight", id: rec.highlight.id, patch: { orphaned: true } });
+          log(`persisted orphan=true for ${rec.highlight.id.slice(0, 8)} (retry on page ${pageNumber})`);
+        } catch (e) {
+          log(`orphan=true persist failed for ${rec.highlight.id.slice(0, 8)}:`, e);
+        }
+      }
+    }
+    // result.kind === "pending" again is unexpected (we just got textlayerrendered for this page);
+    // leave the record as-is and let a future event drive another retry.
+  }
+
+  notifySidebar();
+}
+
+/**
+ * After loadAndRenderExistingHighlights has populated state.records, walk
+ * the pending records and, for any page whose `.textLayer` is already
+ * populated in the DOM, trigger a synthetic retry. This closes the race
+ * where `textlayerrendered` fires between the renderer mounting the text
+ * layer and Phase 3 storing the pending record — without this catch-up,
+ * such records would stay pending until the user scrolls.
+ */
+async function catchUpPdfPendingAfterLoad(): Promise<void> {
+  const pagesSeen = new Set<number>();
+  for (const rec of state.records.values()) {
+    if (!rec.pending || rec.pendingPdfPage == null) continue;
+    if (pagesSeen.has(rec.pendingPdfPage)) continue;
+    const pageEl = document.querySelector(
+      `.pdfViewer .page[data-page-number="${rec.pendingPdfPage}"], .viewer-page[data-page-number="${rec.pendingPdfPage}"]`,
+    );
+    const tl = pageEl?.querySelector(".textLayer");
+    if (tl && tl.childElementCount > 0) pagesSeen.add(rec.pendingPdfPage);
+  }
+  for (const pageNumber of pagesSeen) {
+    await retryPendingForPdfPage(pageNumber);
+  }
 }
 
 function getCounts(highlightId: string): MarkerCounts {
@@ -1279,7 +1453,14 @@ async function persistAndRender(anchor: Anchor): Promise<Highlight | null> {
     log(`could not anchor newly created highlight: ${result.reason}`);
     orphan = true;
   }
-  state.records.set(created.id, { highlight: { ...created, orphaned: orphan }, rendered, orphan, matchStrategy });
+  state.records.set(created.id, {
+    highlight: { ...created, orphaned: orphan },
+    rendered,
+    orphan,
+    pending: false,
+    pendingPdfPage: null,
+    matchStrategy,
+  });
   await refreshAllMarkerCounts();
   return created;
 }

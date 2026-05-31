@@ -17,23 +17,30 @@ export interface SidebarHighlightEntry {
   firstCommentPreview: string | null;
   /** Snippet of the most recent thread's last message, if any. */
   latestThreadPreview: string | null;
-  /** Whether the highlight is currently rendered on the page (false → orphan). */
+  /** Whether the highlight is currently rendered on the page. */
   rendered: boolean;
+  /**
+   * PDF-only: page hasn't been scrolled into view yet, so its text layer
+   * doesn't exist. NOT an orphan — anchor retry will run when pdfjs
+   * renders the page. The sidebar should treat this as "live, off-screen"
+   * rather than mark it with the orphan warning.
+   */
+  pending: boolean;
 }
 
 export interface SidebarState {
   articleTitle: string;
   articleUrl: string;
-  /** Live highlights (rendered === true). Sorted by createdAt asc. */
+  /** Live highlights (rendered === true OR pending === true). Sorted by createdAt asc. */
   live: SidebarHighlightEntry[];
-  /** Orphans (rendered === false). Sorted by createdAt desc. */
+  /** True orphans (rendered === false AND pending === false). Sorted by createdAt desc. */
   orphans: SidebarHighlightEntry[];
 }
 
 export type SidebarStateBuilderInput = {
   articleTitle: string;
   articleUrl: string;
-  records: Map<string, { highlight: Highlight; rendered: { unrender: () => void } | null; orphan: boolean }>;
+  records: Map<string, { highlight: Highlight; rendered: { unrender: () => void } | null; orphan: boolean; pending?: boolean }>;
   comments: Comment[];
   threads: Thread[];
 };
@@ -78,11 +85,15 @@ export function buildSidebarState(input: SidebarStateBuilderInput): SidebarState
       firstCommentPreview: firstComment,
       latestThreadPreview: threadPreview,
       rendered: !!rec.rendered,
+      pending: rec.pending === true,
     });
   }
 
-  const live = entries.filter((e) => e.rendered).sort((a, b) => a.highlight.createdAt - b.highlight.createdAt);
-  const orphans = entries.filter((e) => !e.rendered).sort((a, b) => b.highlight.createdAt - a.highlight.createdAt);
+  // Pending records (PDF page not yet scrolled into view) are NOT orphans —
+  // group them with live so the user doesn't get a "couldn't re-anchor"
+  // warning for a highlight that's just off-screen.
+  const live = entries.filter((e) => e.rendered || e.pending).sort((a, b) => a.highlight.createdAt - b.highlight.createdAt);
+  const orphans = entries.filter((e) => !e.rendered && !e.pending).sort((a, b) => b.highlight.createdAt - a.highlight.createdAt);
 
   return {
     articleTitle: input.articleTitle,

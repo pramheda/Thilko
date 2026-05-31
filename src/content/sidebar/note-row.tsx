@@ -23,13 +23,18 @@ export function NoteRow({ entry, previewMode = "auto", onClick }: NoteRowProps) 
   const { highlight, commentCount, threadCount, firstCommentPreview, latestThreadPreview } = entry;
   const quote = highlight.anchor.quote.exact;
 
+  // `pending` rows look "live" — they belong to a page pdfjs hasn't rendered
+  // yet. We never want to call them "Couldn't re-anchor" or stamp the orphan
+  // badge; the textlayerrendered listener will bind them as the user scrolls.
+  const isLiveLike = entry.rendered || entry.pending;
+
   let previewLine: string;
   if (previewMode === "comment") {
-    previewLine = firstCommentPreview ?? (entry.rendered ? "No comments on this highlight" : "Couldn't re-anchor");
+    previewLine = firstCommentPreview ?? (isLiveLike ? "No comments on this highlight" : "Couldn't re-anchor");
   } else if (previewMode === "thread") {
-    previewLine = latestThreadPreview ?? (entry.rendered ? "No threads on this highlight" : "Couldn't re-anchor");
+    previewLine = latestThreadPreview ?? (isLiveLike ? "No threads on this highlight" : "Couldn't re-anchor");
   } else {
-    previewLine = firstCommentPreview ?? latestThreadPreview ?? (entry.rendered ? "No notes yet" : "Couldn't re-anchor");
+    previewLine = firstCommentPreview ?? latestThreadPreview ?? (isLiveLike ? "No notes yet" : "Couldn't re-anchor");
   }
 
   return (
@@ -49,8 +54,8 @@ export function NoteRow({ entry, previewMode = "auto", onClick }: NoteRowProps) 
             {threadCount}
           </span>
         ) : null}
-        {commentCount === 0 && threadCount === 0 && entry.rendered ? <span className="note-row-badge muted">🔖</span> : null}
-        {!entry.rendered ? <span className="note-row-badge orphan">orphan</span> : null}
+        {commentCount === 0 && threadCount === 0 && isLiveLike ? <span className="note-row-badge muted">🔖</span> : null}
+        {!entry.rendered && !entry.pending ? <span className="note-row-badge orphan">orphan</span> : null}
         <span className="note-row-time">{formatTimestamp(highlight.createdAt)}</span>
       </div>
     </button>
