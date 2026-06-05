@@ -22,7 +22,29 @@
   --error: #b91c1c;
 }
 
-* { box-sizing: border-box; }
+/* Scoped box-sizing for our chrome only.
+ *
+ * pdfjs's `.pdfViewer .page` declares width: 816px / height: 1056px PLUS
+ * a 9px `--page-border` and assumes the browser-default `content-box` —
+ * the canvas + text-layer get the full 816×1056 of content and the border
+ * draws outside. A universal `* { box-sizing: border-box }` would force
+ * the border into the box, drift the text layer relative to the canvas,
+ * and visibly misalign highlights and the browser's selection band. So
+ * we only flip box-sizing on the viewer's own chrome elements.
+ */
+.viewer,
+.viewer-toolbar,
+.viewer-toolbar *,
+.viewer-banner,
+.viewer-banner *,
+.viewer-error,
+.viewer-error *,
+.thilko-find-bar,
+.thilko-find-bar *,
+.pdf-stage,
+.pdf-container {
+  box-sizing: border-box;
+}
 
 html, body, #root {
   height: 100%;
